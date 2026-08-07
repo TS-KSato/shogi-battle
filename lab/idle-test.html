@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>待機モーション比較 — 9×9 / 40体</title>
+<style>
+  :root{
+    --ink:#e8e3d8;
+    --dim:#8b8578;
+    --line:rgba(232,227,216,.16);
+    --hit:#c9a227;
+    --bg:#0c0d0b;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+    font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    -webkit-text-size-adjust:100%;overscroll-behavior:none}
+  #app{position:fixed;inset:0;display:flex;flex-direction:column}
+  #view{flex:1;min-height:0;position:relative}
+  canvas{display:block;width:100%;height:100%;touch-action:none}
+
+  #stats{position:absolute;top:0;left:0;right:0;display:flex;gap:14px;
+    padding:8px 10px;background:linear-gradient(#0c0d0bdd,transparent);
+    font-size:11px;color:var(--dim);pointer-events:none;flex-wrap:wrap}
+  #stats b{color:var(--ink);font-weight:500}
+
+  #panel{border-top:1px solid var(--line);background:#111210;padding:10px 10px 14px;
+    max-height:46vh;overflow:auto}
+  .row{display:flex;gap:6px;margin-bottom:8px}
+  .row:last-child{margin-bottom:0}
+  button{flex:1;font:inherit;font-size:12px;color:var(--ink);background:#1a1b18;
+    border:1px solid var(--line);border-radius:3px;padding:9px 4px;cursor:pointer;
+    -webkit-tap-highlight-color:transparent}
+  button[aria-pressed="true"]{background:#2b2718;border-color:var(--hit);color:#f4e6ae}
+  button:focus-visible{outline:2px solid var(--hit);outline-offset:2px}
+  .lbl{font-size:10px;letter-spacing:.14em;color:var(--dim);margin:12px 0 5px}
+  .lbl:first-child{margin-top:0}
+  .chk{display:flex;align-items:center;gap:7px;flex:1;font-size:11px;color:var(--dim);
+    border:1px solid var(--line);border-radius:3px;padding:8px 7px;cursor:pointer}
+  .chk input{accent-color:var(--hit);margin:0}
+  .chk:has(input:checked){color:var(--ink);border-color:rgba(201,162,39,.5)}
+  .slider{display:flex;align-items:center;gap:10px;font-size:11px;color:var(--dim)}
+  input[type=range]{flex:1;accent-color:var(--hit);min-width:0}
+  #amp{width:34px;text-align:right;color:var(--ink)}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="view">
+    <div id="stats">
+      <span>fps <b id="s-fps">–</b></span>
+      <span>描画呼び出し <b id="s-calls">–</b></span>
+      <span>三角形 <b id="s-tris">–</b></span>
+      <span>駒の高さ <b id="s-px">–</b>px</span>
+    </div>
+  </div>
+
+  <div id="panel">
+    <div class="lbl">待機の方式</div>
+    <div class="row">
+      <button id="m0" aria-pressed="false">静止</button>
+      <button id="m1" aria-pressed="true">シェーダ揺れ</button>
+      <button id="m2" aria-pressed="false">骨アニメ</button>
+    </div>
+
+    <div class="lbl">ばらつき</div>
+    <div class="row">
+      <label class="chk"><input type="checkbox" id="v-phase" checked>位相</label>
+      <label class="chk"><input type="checkbox" id="v-speed" checked>速度</label>
+      <label class="chk"><input type="checkbox" id="v-scale" checked>大きさ</label>
+    </div>
+
+    <div class="lbl">揺れの量</div>
+    <div class="row slider">
+      <input type="range" id="r-amp" min="0" max="250" value="100">
+      <span id="amp">1.00</span>
+    </div>
+
+    <div class="row" style="margin-top:12px">
+      <button id="btn-move">1体だけ動かす</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+"use strict";
+
+/* ───────────────────────── 定数 ───────────────────────── */
+
+const N = 9;                 // 盤の一辺
+const SQ = 1.0;              // 1マス = 1.0 単位（企画書 第14節）
+const CHAR_H = 0.79;         // 素体の全高（単位）
+const BASE = 0.70 / CHAR_H;  // 全高0.70に合わせる倍率（第14節の比較候補）
+const TILT = 50 * Math.PI / 180;
+
+/* 駒種ごとの大きさ倍率。識別のためではなく、集団が単一コピーに
+   見えるのを防ぐため。 */
+const SCALE = { fu:.82, kyo:.88, kei:.90, gin:.96, kin:1.00, kaku:1.03, hisha:1.06, gyoku:1.16 };
+const BACK  = ['kyo','kei','gin','kin','gyoku','kin','gin','kei','kyo'];
+
+/* ───────────────────────── 素体の形状 ─────────────────────────
+   箱の集合。造形の評価はここでは行わない。動きだけを見る。
+   各パーツは1本の骨に固定重み付け（剛体スキニング）。
+   30px表示では関節の割れは見えないので、これで十分。      */
+
+const BONE = { HIP:0, CHEST:1, HEAD:2, ARM_L:3, ARM_R:4 };
+
+function boxPart(w, h, d, x, y, z, bone){
+  const g = new THREE.BoxGeometry(w, h, d).toNonIndexed();
+  g.translate(x, y, z);
+  const n = g.attributes.position.count;
+  const si = new Float32Array(n * 4);
+  const sw = new Float32Array(n * 4);
+  for (let i = 0; i < n; i++){ si[i*4] = bone; sw[i*4] = 1; }
+  g.setAttribute('skinIndex',  new THREE.BufferAttribute(si, 4));
+  g.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4));
+  return g;
+}
+
+function mergeParts(list){
+  const keys = ['position','normal','skinIndex','skinWeight'];
+  const size = { position:3, normal:3, skinIndex:4, skinWeight:4 };
+  let total = 0;
+  list.forEach(g => total += g.attributes.position.count);
+
+  const out = new THREE.BufferGeometry();
+  keys.forEach(k => {
+    const arr = new Float32Array(total * size[k]);
+    let off = 0;
+    list.forEach(g => { arr.set(g.attributes[k].array, off); off += g.attributes[k].array.length; });
+    out.setAttribute(k, new THREE.BufferAttribute(arr, size[k]));
+  });
+
+  // aFlex: 足元0 → 頭頂1。シェーダ揺れで「上ほど大きく振れる」ために使う。
+  const pos = out.attributes.position.array;
+  const flex = new Float32Array(total);
+  for (let i = 0; i < total; i++) flex[i] = Math.min(1, Math.max(0, pos[i*3+1] / CHAR_H));
+  out.setAttribute('aFlex', new THREE.BufferAttribute(flex, 1));
+  return out;
+}
+
+function buildBody(){
+  return mergeParts([
+    boxPart(0.17, 0.28, 0.14,  0.000, 0.140, 0, BONE.HIP),    // 脚・腰
+    boxPart(0.25, 0.24, 0.17,  0.000, 0.400, 0, BONE.CHEST),  // 胴
+    boxPart(0.18, 0.15, 0.17,  0.000, 0.585, 0, BONE.HEAD),   // 頭
+    boxPart(0.05, 0.14, 0.14,  0.000, 0.720, 0, BONE.HEAD),   // 前立（頭頂の突起）
+    boxPart(0.06, 0.20, 0.06, -0.150, 0.360, 0, BONE.ARM_L),  // 左腕
+    boxPart(0.06, 0.20, 0.06,  0.150, 0.360, 0, BONE.ARM_R),  // 右腕
+  ]);
+}
+
+/* ───────────────────────── 配置 ─────────────────────────
+   将棋の初期配置。40体。file 0..8 / rank 0..8。
+   rank 0-2 が敵（赤・奥）、rank 6-8 が自軍（青・手前）。 */
+
+function initialUnits(){
+  const u = [];
+  const add = (team, file, rank, type) =>
+    u.push({ team, file, rank, type, scale: SCALE[type],
+             phase: Math.random() * Math.PI * 2,
+             speed: 0.9 + Math.random() * 0.25,
+             jitter: 0.97 + Math.random() * 0.06 });
+
+  for (let f = 0; f < N; f++) add(1, f, 0, BACK[f]);
+  add(1, 1, 1, 'hisha'); add(1, 7, 1, 'kaku');
+  for (let f = 0; f < N; f++) add(1, f, 2, 'fu');
+
+  for (let f = 0; f < N; f++) add(0, f, 6, 'fu');
+  add(0, 1, 7, 'kaku'); add(0, 7, 7, 'hisha');
+  for (let f = 0; f < N; f++) add(0, f, 8, BACK[f]);
+  return u;
+}
+
+const worldX = f => (f - (N - 1) / 2) * SQ;
+const worldZ = r => (r - (N - 1) / 2) * SQ;
+
+/* ───────────────────────── 場面 ───────────────────────── */
+
+const view = document.getElementById('view');
+const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+view.appendChild(renderer.domElement);
+
+const scene  = new THREE.Scene();
+scene.background = new THREE.Color(0x0c0d0b);
+scene.fog = new THREE.Fog(0x0c0d0b, 14, 26);
+
+const camera = new THREE.PerspectiveCamera(34, 1, 0.5, 60);
+const TARGET = new THREE.Vector3(0, 0.35, 0.4);
+
+scene.add(new THREE.HemisphereLight(0xbfd4e8, 0x30281c, 0.85));
+const sun = new THREE.DirectionalLight(0xfff0d0, 0.85);
+sun.position.set(3.5, 8, 4);
+scene.add(sun);
+
+// 盤
+const board = new THREE.Mesh(
+  new THREE.BoxGeometry(N * SQ, 0.18, N * SQ),
+  new THREE.MeshLambertMaterial({ color: 0x6b7a4c })
+);
+board.position.y = -0.09;
+scene.add(board);
+
+// マスの境界線
+{
+  const pts = [];
+  const half = (N * SQ) / 2;
+  for (let i = 0; i <= N; i++){
+    const p = -half + i * SQ;
+    pts.push(-half, 0.002, p,  half, 0.002, p);
+    pts.push(p, 0.002, -half,  p, 0.002, half);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  scene.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({
+    color: 0xe8dcb0, transparent: true, opacity: 0.30
+  })));
+}
+
+/* ───────────────────────── 素材 ─────────────────────────
+   uMode 0 = 静止 / 1 = シェーダ揺れ。
+   骨を使わず、頂点位置を直接ずらす。40体で描画呼び出しは陣営ごとに1回。 */
+
+const uTime = { value: 0 };
+const uAmp  = { value: 1 };
+const uMode = { value: 1 };
+
+function wobbleMaterial(color){
+  const m = new THREE.MeshLambertMaterial({ color });
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uTime = uTime;
+    sh.uniforms.uAmp  = uAmp;
+    sh.uniforms.uMode = uMode;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', `#include <common>
+        attribute float aPhase;
+        attribute float aSpeed;
+        attribute float aFlex;
+        uniform float uTime;
+        uniform float uAmp;
+        uniform float uMode;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        if (uMode > 0.5) {
+          float t = uTime * aSpeed + aPhase;
+          float f = aFlex * aFlex;
+          transformed.y += sin(t * 2.20) * 0.030 * uAmp;
+          transformed.x += sin(t * 1.70) * 0.055 * f * uAmp;
+          transformed.z += sin(t * 1.30 + 1.1) * 0.035 * f * uAmp;
+        }`);
+  };
+  return m;
+}
+
+const COLOR = [0x5f86cf, 0xd26355];       // 0=自軍(青) 1=敵軍(赤)
+const bodyGeom = buildBody();
+const units = initialUnits();
+
+/* ── 方式A/B: InstancedMesh（陣営ごとに1つ） ── */
+
+const inst = [0, 1].map(team => {
+  const idx = units.map((u, i) => u.team === team ? i : -1).filter(i => i >= 0);
+  const g = bodyGeom.clone();
+  const phase = new Float32Array(idx.length);
+  const speed = new Float32Array(idx.length);
+  g.setAttribute('aPhase', new THREE.InstancedBufferAttribute(phase, 1));
+  g.setAttribute('aSpeed', new THREE.InstancedBufferAttribute(speed, 1));
+
+  const mesh = new THREE.InstancedMesh(g, wobbleMaterial(COLOR[team]), idx.length);
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  mesh.frustumCulled = false;
+  scene.add(mesh);
+  return { mesh, idx, phase, speed };
+});
+
+/* ── 方式C: SkinnedMesh を40体（比較対象の「高い方」） ── */
+
+const skinGroup = new THREE.Group();
+skinGroup.visible = false;
+scene.add(skinGroup);
+
+const skinMat = [0, 1].map(t => new THREE.MeshLambertMaterial({ color: COLOR[t], skinning: true }));
+
+function makeSkinned(team){
+  const hip = new THREE.Bone();   hip.position.set(0, 0.14, 0);
+  const chest = new THREE.Bone(); chest.position.set(0, 0.16, 0);
+  const head = new THREE.Bone();  head.position.set(0, 0.20, 0);
+  const armL = new THREE.Bone();  armL.position.set(-0.15, 0.10, 0);
+  const armR = new THREE.Bone();  armR.position.set( 0.15, 0.10, 0);
+  hip.add(chest); chest.add(head); chest.add(armL); chest.add(armR);
+
+  const bones = [hip, chest, head, armL, armR];
+  const mesh = new THREE.SkinnedMesh(bodyGeom, skinMat[team]);
+  mesh.add(hip);
+  mesh.bind(new THREE.Skeleton(bones));
+  mesh.frustumCulled = false;
+  mesh.userData.bones = { hip, chest, head, armL, armR };
+  return mesh;
+}
+
+const skinned = units.map(u => {
+  const m = makeSkinned(u.team);
+  skinGroup.add(m);
+  return m;
+});
+
+/* ───────────────────────── 行列の再計算 ───────────────────────── */
+
+const vary = { phase:true, speed:true, scale:true };
+const dummy = new THREE.Object3D();
+
+/* 移動アニメーション用。null でなければ、その1体だけ別扱い。 */
+let moving = null;
+
+function unitPos(u, i){
+  let x = worldX(u.file), z = worldZ(u.rank), y = 0;
+  if (moving && moving.i === i){
+    const k = moving.t;
+    x = THREE.MathUtils.lerp(worldX(moving.f0), worldX(moving.f1), k);
+    z = THREE.MathUtils.lerp(worldZ(moving.r0), worldZ(moving.r1), k);
+    y = Math.sin(k * Math.PI) * 0.22;          // 跳ねる弧
+  }
+  return { x, y, z };
+}
+
+function unitScale(u){
+  return BASE * u.scale * (vary.scale ? u.jitter : 1);
+}
+
+function refresh(){
+  inst.forEach(g => {
+    g.idx.forEach((ui, k) => {
+      const u = units[ui];
+      const p = unitPos(u, ui);
+      const s = unitScale(u);
+      dummy.position.set(p.x, p.y, p.z);
+      dummy.rotation.set(0, u.team === 1 ? Math.PI : 0, 0);
+      dummy.scale.setScalar(s);
+      dummy.updateMatrix();
+      g.mesh.setMatrixAt(k, dummy.matrix);
+      g.phase[k] = vary.phase ? u.phase : 0;
+      g.speed[k] = vary.speed ? u.speed : 1;
+    });
+    g.mesh.instanceMatrix.needsUpdate = true;
+    g.mesh.geometry.attributes.aPhase.needsUpdate = true;
+    g.mesh.geometry.attributes.aSpeed.needsUpdate = true;
+  });
+
+  skinned.forEach((m, i) => {
+    const u = units[i];
+    const p = unitPos(u, i);
+    m.position.set(p.x, p.y, p.z);
+    m.rotation.y = u.team === 1 ? Math.PI : 0;
+    m.scale.setScalar(unitScale(u));
+  });
+}
+
+/* ───────────────────────── 骨アニメ ─────────────────────────
+   関節を正確に動かすことが目的ではない。重心の上下と、
+   左右非対称な揺れだけを作る。 */
+
+function animateBones(t){
+  for (let i = 0; i < skinned.length; i++){
+    const u = units[i];
+    const b = skinned[i].userData.bones;
+    const tt = t * (vary.speed ? u.speed : 1) + (vary.phase ? u.phase : 0);
+    const a = uAmp.value;
+    b.hip.position.y   = 0.14 + Math.sin(tt * 2.20) * 0.030 * a;
+    b.chest.rotation.z = Math.sin(tt * 1.70) * 0.075 * a;
+    b.chest.rotation.x = Math.sin(tt * 1.30 + 1.1) * 0.050 * a;
+    b.head.rotation.x  = Math.sin(tt * 1.90 + 0.5) * 0.110 * a;
+    b.armL.rotation.x  = Math.sin(tt * 1.60) * 0.220 * a;
+    b.armR.rotation.x  = Math.sin(tt * 1.60 + 2.6) * 0.220 * a;
+  }
+}
+
+/* ───────────────────────── 表示サイズの実測 ─────────────────────────
+   盤中央の1体が、画面上で実際に何ピクセルになるかを測る。 */
+
+const pA = new THREE.Vector3(), pB = new THREE.Vector3();
+function charPixels(){
+  pA.set(0, 0, 0).project(camera);
+  pB.set(0, CHAR_H * BASE, 0).project(camera);
+  return Math.abs(pA.y - pB.y) / 2 * renderer.domElement.clientHeight;
+}
+
+/* ───────────────────────── 画面合わせ ───────────────────────── */
+
+function resize(){
+  const w = view.clientWidth, h = view.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+
+  // 盤の横幅が画面に収まる距離を求める（縦持ちでは横が制約になる）
+  const halfW = (N * SQ) / 2 + 0.35;
+  const vFov = camera.fov * Math.PI / 180;
+  const hFov = 2 * Math.atan(Math.tan(vFov / 2) * camera.aspect);
+  const distW = halfW / Math.tan(hFov / 2);
+  const halfD = (N * SQ) / 2 * Math.cos(TILT) + 0.9;
+  const distD = halfD / Math.tan(vFov / 2);
+  const dist = Math.max(distW, distD);
+
+  camera.position.set(
+    TARGET.x,
+    TARGET.y + dist * Math.sin(TILT),
+    TARGET.z + dist * Math.cos(TILT)
+  );
+  camera.lookAt(TARGET);
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+
+/* ───────────────────────── 操作 ───────────────────────── */
+
+const btn = [document.getElementById('m0'), document.getElementById('m1'), document.getElementById('m2')];
+let mode = 1;
+
+function setMode(m){
+  mode = m;
+  btn.forEach((b, i) => b.setAttribute('aria-pressed', String(i === m)));
+  uMode.value = (m === 1) ? 1 : 0;
+  const useSkin = (m === 2);
+  inst.forEach(g => g.mesh.visible = !useSkin);
+  skinGroup.visible = useSkin;
+}
+btn.forEach((b, i) => b.addEventListener('click', () => setMode(i)));
+
+[['v-phase','phase'], ['v-speed','speed'], ['v-scale','scale']].forEach(([id, key]) => {
+  document.getElementById(id).addEventListener('change', e => {
+    vary[key] = e.target.checked;
+    refresh();
+  });
+});
+
+const ampOut = document.getElementById('amp');
+document.getElementById('r-amp').addEventListener('input', e => {
+  uAmp.value = e.target.value / 100;
+  ampOut.textContent = uAmp.value.toFixed(2);
+});
+
+document.getElementById('btn-move').addEventListener('click', () => {
+  if (moving) return;
+  // 自軍の歩（rank 6）から1体選び、1マス前進させる
+  const cand = units.map((u, i) => (u.team === 0 && u.rank > 0) ? i : -1).filter(i => i >= 0);
+  const i = cand[Math.floor(Math.random() * cand.length)];
+  const u = units[i];
+  moving = { i, t: 0, f0: u.file, r0: u.rank, f1: u.file, r1: u.rank - 1 };
+});
+
+/* ───────────────────────── ループ ───────────────────────── */
+
+const el = {
+  fps:   document.getElementById('s-fps'),
+  calls: document.getElementById('s-calls'),
+  tris:  document.getElementById('s-tris'),
+  px:    document.getElementById('s-px'),
+};
+
+let last = performance.now(), acc = 0, frames = 0, fps = 0;
+const clock = new THREE.Clock();
+
+function loop(){
+  requestAnimationFrame(loop);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t  = clock.getElapsedTime();
+
+  uTime.value = t;
+  if (mode === 2) animateBones(t);
+
+  if (moving){
+    moving.t += dt / 0.35;                      // 0.35秒で1マス（第12節の開始値）
+    if (moving.t >= 1){
+      const u = units[moving.i];
+      u.file = moving.f1; u.rank = moving.r1;
+      moving = null;
+    }
+    refresh();
+  }
+
+  renderer.render(scene, camera);
+
+  frames++;
+  const now = performance.now();
+  acc += now - last; last = now;
+  if (acc >= 500){
+    fps = Math.round(frames * 1000 / acc);
+    acc = 0; frames = 0;
+    el.fps.textContent   = fps;
+    el.calls.textContent = renderer.info.render.calls;
+    el.tris.textContent  = renderer.info.render.triangles.toLocaleString();
+    el.px.textContent    = charPixels().toFixed(1);
+  }
+}
+
+resize();
+refresh();
+setMode(1);
+loop();
+</script>
+</body>
+</html>
