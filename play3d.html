@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>将棋 — 人間 対 NPC（3D）</title>
+<style>
+  :root{ --ink:#e8e3d8; --dim:#8b8578; --line:rgba(232,227,216,.16);
+         --hit:#c9a227; --bg:#0c0d0b; --panel:#111210; }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+    font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    -webkit-text-size-adjust:100%;overscroll-behavior:none}
+  #app{position:fixed;inset:0;display:flex;flex-direction:column}
+  #view{flex:1;min-height:0;position:relative}
+  canvas{display:block;width:100%;height:100%;touch-action:none}
+
+  /* 3D の上に重ねる情報。盤のタップを邪魔しないよう pointer-events は切る */
+  #status{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;
+    gap:10px;padding:8px 11px;background:linear-gradient(#0c0d0bdd,transparent);
+    font-size:12px;pointer-events:none}
+  #turn{color:var(--ink)} #turn.check{color:#e0653f}
+  #info{color:var(--dim);font-size:11px;text-align:right;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+
+  /* 相手の持ち駒は画面上端の帯に重ねる（盤の奥＝画面上方は空きやすい） */
+  #handTop{position:absolute;top:26px;left:0;right:0;display:flex;flex-wrap:wrap;gap:4px;
+    justify-content:center;padding:2px 8px;pointer-events:none}
+
+  /* 駒（持ち駒の五角形。capture-test の tray と同じ形） */
+  .koma{display:inline-flex;align-items:center;justify-content:center;position:relative;
+    width:22px;height:25px;padding-top:2px;font-size:12px;color:#241a11;
+    clip-path:polygon(50% 0,88% 15%,100% 100%,0 100%,12% 15%);
+    background:linear-gradient(160deg,#f5e4bd,#d6a75e 72%,#b98437);
+    font-family:"Hiragino Mincho ProN","Yu Mincho",serif}
+  .koma .n{position:absolute;right:-3px;bottom:-4px;font-size:9px;color:var(--hit);
+    background:var(--bg);border-radius:6px;padding:0 3px;line-height:1.5;
+    font-family:ui-monospace,monospace}
+  #handBottom .koma{cursor:pointer;width:26px;height:29px;font-size:14px}
+  #handBottom .koma.sel{outline:2px solid var(--hit);outline-offset:1px}
+  #handBottom .empty,#handTop .empty{color:var(--dim);font-size:11px;padding:0 6px}
+
+  #panel{border-top:1px solid var(--line);background:var(--panel);padding:9px 10px 12px}
+  .myhand{display:flex;flex-wrap:wrap;gap:5px;align-items:center;min-height:31px;
+    margin-bottom:9px;font-size:11px;color:var(--dim)}
+  .myhand .lead{margin-right:2px}
+  .controls{display:flex;flex-wrap:wrap;gap:6px}
+  .grp{display:flex;gap:6px;flex:1;min-width:0}
+  button,select{font:inherit;font-size:12px;color:var(--ink);background:#1a1b18;
+    border:1px solid var(--line);border-radius:3px;padding:8px 6px;cursor:pointer;
+    -webkit-tap-highlight-color:transparent}
+  select{flex:1;min-width:0}
+  button.primary{background:#2b2718;border-color:var(--hit);color:#f4e6ae;flex:1}
+  button.ghost{flex:1}
+  button:focus-visible,select:focus-visible{outline:2px solid var(--hit);outline-offset:2px}
+
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;
+    align-items:center;justify-content:center;padding:20px;z-index:10}
+  .overlay.on{display:flex}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:6px;
+    padding:18px;max-width:300px;width:100%;text-align:center}
+  .card p{margin:0 0 14px;font-size:13px}
+  .card .big{font-size:16px;color:var(--hit);letter-spacing:.06em;margin-bottom:6px}
+  .rowb{display:flex;gap:8px}.rowb button{flex:1}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="view">
+    <div id="status"><span id="turn">読み込み中…</span><span id="info"></span></div>
+    <div id="handTop"></div>
+  </div>
+  <div id="panel">
+    <div class="myhand" id="handBottom"></div>
+    <div class="controls">
+      <div class="grp">
+        <select id="side" title="手番">
+          <option value="0">あなた=先手（手前）</option>
+          <option value="1">あなた=後手（奥）</option>
+        </select>
+        <select id="level" title="強さ">
+          <option value="easy">やさしい</option>
+          <option value="normal" selected>ふつう</option>
+          <option value="hard">つよい</option>
+        </select>
+      </div>
+      <div class="grp">
+        <button class="primary" id="newGame">新規対局</button>
+        <button class="ghost" id="resign">投了</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="promoOv"><div class="card">
+  <p>成りますか？</p>
+  <div class="rowb"><button id="promoYes" class="primary">成る</button><button id="promoNo">成らず</button></div>
+</div></div>
+
+<div class="overlay" id="resultOv"><div class="card">
+  <p class="big" id="resultBig"></p><p id="resultSub"></p>
+  <button id="resultClose" class="primary">閉じる</button>
+</div></div>
+
+<!-- 盤面の描画は lab/idle-test.html と同じ Three.js。GitHub Pages では CDN 直リンクで届く。 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script type="module">
+import {
+  START_SFEN, parseSfen, toSfen, legalMoves,
+  doMove, moveToUsi, usiToMove,
+  moveTo, moveFrom, isDrop, dropType,
+  colorOf, typeOf, baseOf, col, row, inCheck,
+  BLACK, WHITE, EMPTY, FU, KY, KE, GI, KI, KA, HI,
+} from './src/shogi.js';
+import { Npc } from './src/npc.js';
+
+/* ═════════ ルール層まわりの表記（play.html と共通） ═════════ */
+const KANJI = [];
+KANJI[0]='歩';KANJI[1]='香';KANJI[2]='桂';KANJI[3]='銀';KANJI[4]='金';
+KANJI[5]='角';KANJI[6]='飛';KANJI[7]='玉';
+KANJI[8]='と';KANJI[9]='杏';KANJI[10]='圭';KANJI[11]='全';KANJI[13]='馬';KANJI[14]='龍';
+const HAND_ORDER = [HI, KA, KI, GI, KE, KY, FU];
+
+/* ═════════ 3D 定数（lab/idle-test.html を流用） ═════════ */
+const N = 9, SQ = 1.0, CHAR_H = 0.79, BASE = 0.70 / CHAR_H;
+const TILT = 50 * Math.PI / 180;
+const COLOR = [0x5f86cf, 0xd26355];            // 0=自軍(青・手前) 1=敵軍(赤・奥)
+/* 駒種ごとの大きさ。識別用ではなく、集団が単一コピーに見えるのを防ぐため。 */
+const SCALE = { fu:.82, kyo:.88, kei:.90, gin:.96, kin:1.00, kaku:1.03, hisha:1.06, gyoku:1.16 };
+const BASE_NAME = ['fu','kyo','kei','gin','kin','kaku','hisha','gyoku'];
+const scaleOf = t => SCALE[BASE_NAME[baseOf(t)]];
+
+const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
+const seg = (u,a,b) => clamp01((u - a) / (b - a));
+const outCubic = t => 1 - Math.pow(1 - t, 3);
+const inCubic  = t => t * t * t;
+const outBack  = t => 1 + 2.2 * Math.pow(t-1,3) + 1.4 * Math.pow(t-1,2);
+
+/* ═════════ 素体（骨は使わない。頂点シェーダで揺らすだけ） ═════════ */
+function boxPart(w,h,d,x,y,z){
+  const g = new THREE.BoxGeometry(w,h,d).toNonIndexed();
+  g.translate(x,y,z);
+  return g;
+}
+function mergeParts(list){
+  let total = 0; list.forEach(g => total += g.attributes.position.count);
+  const out = new THREE.BufferGeometry();
+  ['position','normal'].forEach(k => {
+    const arr = new Float32Array(total*3); let off = 0;
+    list.forEach(g => { arr.set(g.attributes[k].array, off); off += g.attributes[k].array.length; });
+    out.setAttribute(k, new THREE.BufferAttribute(arr, 3));
+  });
+  // aFlex: 足元0 → 頭頂1。揺れを「上ほど大きく」するために使う。
+  const pos = out.attributes.position.array, flex = new Float32Array(total);
+  for (let i = 0; i < total; i++) flex[i] = clamp01(pos[i*3+1] / CHAR_H);
+  out.setAttribute('aFlex', new THREE.BufferAttribute(flex, 1));
+  return out;
+}
+const bodyGeom = mergeParts([
+  boxPart(0.17,0.28,0.14,  0.000,0.140,0),   // 脚・腰
+  boxPart(0.25,0.24,0.17,  0.000,0.400,0),   // 胴
+  boxPart(0.18,0.15,0.17,  0.000,0.585,0),   // 頭
+  boxPart(0.05,0.14,0.14,  0.000,0.720,0),   // 前立
+  boxPart(0.06,0.20,0.06, -0.150,0.360,0),   // 左腕
+  boxPart(0.06,0.20,0.06,  0.150,0.360,0),   // 右腕
+]);
+
+/* ═════════ 場面（idle-test を流用） ═════════ */
+const view = document.getElementById('view');
+const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+view.appendChild(renderer.domElement);
+const canvas = renderer.domElement;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0c0d0b);
+scene.fog = new THREE.Fog(0x0c0d0b, 14, 26);
+const camera = new THREE.PerspectiveCamera(34, 1, 0.5, 60);
+const TARGET = new THREE.Vector3(0, 0.35, 0.4);
+
+scene.add(new THREE.HemisphereLight(0xbfd4e8, 0x30281c, 0.85));
+const sun = new THREE.DirectionalLight(0xfff0d0, 0.85);
+sun.position.set(3.5, 8, 4); scene.add(sun);
+
+const board = new THREE.Mesh(new THREE.BoxGeometry(N*SQ, 0.18, N*SQ),
+  new THREE.MeshLambertMaterial({ color: 0x6b7a4c }));
+board.position.y = -0.09; scene.add(board);
+{
+  const pts = [], half = N*SQ/2;
+  for (let i = 0; i <= N; i++){ const p = -half + i*SQ;
+    pts.push(-half,0.002,p, half,0.002,p); pts.push(p,0.002,-half, p,0.002,half); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  scene.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({
+    color: 0xe8dcb0, transparent: true, opacity: 0.30 })));
+}
+
+/* 待機の揺れ（骨なし・頂点シェーダ。idle-test と同じ式） */
+const uTime = { value: 0 }, uAmp = { value: 1 };
+function wobbleMaterial(color){
+  const m = new THREE.MeshLambertMaterial({ color });
+  m.onBeforeCompile = sh => {
+    sh.uniforms.uTime = uTime; sh.uniforms.uAmp = uAmp;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', `#include <common>
+        attribute float aPhase; attribute float aSpeed; attribute float aFlex;
+        uniform float uTime; uniform float uAmp;`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        {
+          float t = uTime * aSpeed + aPhase;
+          float f = aFlex * aFlex;
+          transformed.y += sin(t*2.20) * 0.030 * uAmp;
+          transformed.x += sin(t*1.70) * 0.055 * f * uAmp;
+          transformed.z += sin(t*1.30+1.1) * 0.035 * f * uAmp;
+        }`);
+  };
+  return m;
+}
+
+/* 陣営ごとに 1 つの InstancedMesh。盤上の駒数は変わるので上限で確保し、
+   使わないスロットは縮尺0で隠す（capture-test と同じ隠し方）。 */
+const MAXI = 40;
+const jitterBySq = new Float32Array(81);
+for (let i = 0; i < 81; i++) jitterBySq[i] = 0.97 + Math.random()*0.06;
+
+function makeTeamMesh(color){
+  const g = bodyGeom.clone();
+  const phase = new Float32Array(MAXI), speed = new Float32Array(MAXI);
+  for (let k = 0; k < MAXI; k++){ phase[k] = Math.random()*Math.PI*2; speed[k] = 0.9 + Math.random()*0.25; }
+  g.setAttribute('aPhase', new THREE.InstancedBufferAttribute(phase, 1));
+  g.setAttribute('aSpeed', new THREE.InstancedBufferAttribute(speed, 1));
+  const mesh = new THREE.InstancedMesh(g, wobbleMaterial(color), MAXI);
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  mesh.frustumCulled = false; scene.add(mesh);
+  return mesh;
+}
+const instHuman = makeTeamMesh(COLOR[0]);   // 手前・自軍
+const instOpp   = makeTeamMesh(COLOR[1]);   // 奥・敵軍
+
+/* ═════════ 盤座標 ⇄ ワールド ═════════
+   ルール層は sq=row*9+col。3D は file/rank（rank 大きいほど手前）。
+   自分を常に手前に置くため、後手のときは前後左右を反転する。 */
+let flip = false;
+const wx = f => (f - (N-1)/2) * SQ;
+const wz = r => (r - (N-1)/2) * SQ;
+function sqToFR(sq){ const c = col(sq), r = row(sq);
+  return flip ? { file: 8-c, rank: 8-r } : { file: c, rank: r }; }
+function frToSq(file, rank){ const c = flip ? 8-file : file, r = flip ? 8-rank : rank;
+  return r*9 + c; }
+function worldOfSq(sq){ const fr = sqToFR(sq); return { x: wx(fr.file), z: wz(fr.rank) }; }
+
+/* ═════════ ハイライト（合法手の表示） ═════════ */
+const hlGroup = new THREE.Group(); scene.add(hlGroup);
+function tile(color, opacity, size, y){
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(size, size),
+    new THREE.MeshBasicMaterial({ color, transparent:true, opacity, depthWrite:false }));
+  m.rotation.x = -Math.PI/2; m.userData.y = y; m.visible = false; hlGroup.add(m); return m;
+}
+function disc(geom, color, y){
+  const m = new THREE.Mesh(geom, new THREE.MeshBasicMaterial({ color, transparent:true, opacity:0.85, depthWrite:false }));
+  m.rotation.x = -Math.PI/2; m.userData.y = y; m.visible = false; hlGroup.add(m); return m;
+}
+const selTile   = tile(0xc9a227, 0.34, 0.92, 0.012);
+const checkTile = tile(0xe0653f, 0.40, 0.92, 0.012);
+const lastTiles = [tile(0xc9a227, 0.14, 0.92, 0.011), tile(0xc9a227, 0.14, 0.92, 0.011)];
+const discGeom  = new THREE.CircleGeometry(0.16, 20);
+const ringGeom  = new THREE.RingGeometry(0.30, 0.44, 22);
+const discPool  = Array.from({length:81}, () => disc(discGeom, 0xc9a227, 0.014));
+const ringPool  = Array.from({length:40}, () => disc(ringGeom, 0xd8402a, 0.014));
+function place(mesh, sq){ const w = worldOfSq(sq); mesh.position.set(w.x, mesh.userData.y, w.z); }
+
+function layoutHighlights(){
+  discPool.forEach(m => m.visible=false); ringPool.forEach(m => m.visible=false);
+  lastTiles.forEach(m => m.visible=false); selTile.visible=false; checkTile.visible=false;
+  if (lastMove){
+    if (lastMove.from >= 0){ place(lastTiles[0], lastMove.from); lastTiles[0].visible=true; }
+    place(lastTiles[1], lastMove.to); lastTiles[1].visible=true;
+  }
+  if (pos.kingSq[pos.turn] >= 0 && inCheck(pos)){ place(checkTile, pos.kingSq[pos.turn]); checkTile.visible=true; }
+  const busy = over || thinking || anim;
+  if (!busy && pos.turn === humanColor && selected){
+    if (selected.kind === 'board'){ place(selTile, selected.sq); selTile.visible=true; }
+    let di = 0, ri = 0;
+    for (const sq of targets.keys()){
+      if (pos.board[sq] !== EMPTY){ const m = ringPool[ri++]; if (m){ place(m, sq); m.visible=true; } }
+      else { const m = discPool[di++]; if (m){ place(m, sq); m.visible=true; } }
+    }
+  }
+}
+
+/* ═════════ 駒の配置（毎フレーム pos から作る。移動中の駒だけ上書き） ═════════ */
+const dummy = new THREE.Object3D();
+function writeTeam(mesh, list){
+  for (let k = 0; k < MAXI; k++){
+    if (k < list.length){
+      const e = list[k], base = BASE * scaleOf(e.type) * e.jitter;
+      dummy.position.set(e.x, e.y, e.z);
+      dummy.rotation.set(e.rx, e.ry, e.rz);
+      dummy.scale.set(base*e.mx, base*e.my, base*e.mz);
+    } else {
+      dummy.position.set(0,-99,0); dummy.rotation.set(0,0,0); dummy.scale.setScalar(0);
+    }
+    dummy.updateMatrix();
+    mesh.setMatrixAt(k, dummy.matrix);
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+}
+const teamOf = color => color === humanColor ? 0 : 1;   // 0=手前 1=奥
+const ryOf   = color => teamOf(color) === 1 ? Math.PI : 0;
+
+function moverEntry(){
+  const a = anim, w1 = worldOfSq(a.to), w0 = a.from >= 0 ? worldOfSq(a.from) : null;
+  const type = typeOf(pos.board[a.to]);                 // 成った後の姿を含む
+  const u = Math.min(a.t, 1);
+  let x = w1.x, z = w1.z, y = 0, rx = 0, mx = 1, my = 1, mz = 1;
+  if (a.kind === 'drop'){
+    const s = 0.6 + 0.4*outBack(u); mx = my = mz = s; y = (1 - outCubic(u)) * 0.25;
+  } else if (a.kind === 'capture'){
+    let k;
+    if (u < 0.40) k = outCubic(seg(u,0,0.40)) * 0.70;
+    else if (u < 0.50) k = 0.70 + inCubic(seg(u,0.40,0.50)) * 0.42;   // 少し踏み込む
+    else k = 1.12 - outBack(seg(u,0.50,0.62)) * 0.12;                 // 戻る
+    const hop  = u < 0.40 ? Math.sin(seg(u,0,0.40)*Math.PI)*0.20 : 0;
+    const lean = (u>=0.40 && u<0.62) ? Math.sin(seg(u,0.40,0.62)*Math.PI)*0.30 : 0;
+    x = w0.x + (w1.x-w0.x)*k; z = w0.z + (w1.z-w0.z)*k; y = hop; rx = -lean;
+  } else {                                              // 通常の移動（弧を描いて滑る）
+    const k = outCubic(u);
+    x = w0.x + (w1.x-w0.x)*k; z = w0.z + (w1.z-w0.z)*k; y = Math.sin(u*Math.PI)*0.20;
+  }
+  return { x, y, z, rx, ry: ryOf(a.moverColor), rz:0, type, jitter: jitterBySq[a.to], mx, my, mz };
+}
+/* 撃破側：capture-test の「つぶれて消える」（style 0） */
+function victimEntry(){
+  const a = anim, w1 = worldOfSq(a.to), u = Math.min(a.t, 1);
+  let rx = 0, mx = 1, my = 1, mz = 1;
+  if (u < 0.50){ rx = u > 0.36 ? Math.sin(seg(u,0.36,0.50)*Math.PI)*0.10 : 0; }
+  else {
+    const d = seg(u,0.50,0.78), sq = outCubic(d);
+    my = 1 - sq*0.95; mx = mz = 1 + Math.sin(d*Math.PI)*0.55 - sq*0.55;
+    if (d >= 1){ mx = my = mz = 0; }
+  }
+  return { x: w1.x, y:0, z: w1.z, rx, ry: ryOf(a.capColor), rz:0,
+           type: a.capType, jitter: jitterBySq[a.to], mx, my, mz };
+}
+
+function layout(){
+  const human = [], opp = [];
+  const listFor = c => teamOf(c) === 0 ? human : opp;
+  for (let sq = 0; sq < 81; sq++){
+    const p = pos.board[sq]; if (p === EMPTY) continue;
+    if (anim && sq === anim.to){ listFor(anim.moverColor).push(moverEntry()); continue; }
+    const w = worldOfSq(sq);
+    listFor(colorOf(p)).push({ x:w.x, y:0, z:w.z, rx:0, ry:ryOf(colorOf(p)), rz:0,
+      type: typeOf(p), jitter: jitterBySq[sq], mx:1, my:1, mz:1 });
+  }
+  if (anim && anim.cap) listFor(anim.capColor).push(victimEntry());
+  writeTeam(instHuman, human);
+  writeTeam(instOpp, opp);
+}
+
+/* ═════════ 画面合わせ（idle-test を流用） ═════════ */
+function resize(){
+  const w = view.clientWidth, h = view.clientHeight;
+  renderer.setSize(w, h, false); camera.aspect = w / h;
+  const halfW = (N*SQ)/2 + 0.35;
+  const vFov = camera.fov * Math.PI/180;
+  const hFov = 2 * Math.atan(Math.tan(vFov/2) * camera.aspect);
+  const distW = halfW / Math.tan(hFov/2);
+  const halfD = (N*SQ)/2 * Math.cos(TILT) + 0.9;
+  const distD = halfD / Math.tan(vFov/2);
+  const dist = Math.max(distW, distD);
+  camera.position.set(TARGET.x, TARGET.y + dist*Math.sin(TILT), TARGET.z + dist*Math.cos(TILT));
+  camera.lookAt(TARGET); camera.updateProjectionMatrix();
+  // 霧は距離に合わせて動かす。idle-test の固定値(14〜26)は盤が縦長で
+  // カメラが引くと盤ごと霧に沈むため、収まり距離を基準に置き直す。
+  scene.fog.near = dist - 3; scene.fog.far = dist + 6;
+}
+addEventListener('resize', () => { resize(); });
+
+/* ═════════ 対局の状態（play.html と同じ枠組み） ═════════ */
+const $ = id => document.getElementById(id);
+const turnEl = $('turn'), infoEl = $('info');
+const npc = new Npc();
+let pos, humanColor, level;
+let legal = [], selected = null, targets = new Map();
+let lastMove = null, thinking = false, over = false, pendingPromo = null;
+let anim = null;                         // {from,to,moverColor,cap,capColor,capType,kind,t,dur,resolve}
+let sceneDirty = true, hlDirty = true;
+
+/* ─ 選択と合法手の表示 ─ */
+function clearSelection(){ selected = null; targets = new Map(); }
+function collectTargets(pred){
+  targets = new Map();
+  for (const mv of legal){
+    if (!pred(mv)) continue;
+    const to = moveTo(mv);
+    (targets.get(to) || targets.set(to, []).get(to)).push(mv);
+  }
+}
+function selectBoard(sq){
+  const p = pos.board[sq];
+  if (p === EMPTY || colorOf(p) !== humanColor) return;
+  selected = { kind:'board', sq };
+  collectTargets(mv => !isDrop(mv) && moveFrom(mv) === sq);
+  hlDirty = true; renderStatus();
+}
+function selectHand(pt){
+  if (!pos.hands[humanColor][pt]) return;
+  selected = { kind:'hand', pt };
+  collectTargets(mv => isDrop(mv) && dropType(mv) === pt);
+  hlDirty = true; renderStatus();
+}
+function chooseTarget(to){
+  const cand = targets.get(to);
+  if (!cand || !cand.length) return;
+  if (cand.length === 1){ humanPlay(cand[0]); return; }
+  pendingPromo = cand; $('promoOv').classList.add('on');   // 成り／不成の確認
+}
+
+/* ─ 着手（ルール層で確定 → 3D で再生） ─ */
+function commitMove(mv){
+  const from = isDrop(mv) ? -1 : moveFrom(mv);
+  const to = moveTo(mv), moverColor = pos.turn;
+  const cap = !isDrop(mv) && pos.board[to] !== EMPTY;
+  const capColor = cap ? colorOf(pos.board[to]) : -1;
+  const capType  = cap ? typeOf(pos.board[to]) : -1;
+  doMove(pos, mv);
+  npc.moved(toSfen(pos));
+  lastMove = { from, to };
+  renderHands();
+  const kind = isDrop(mv) ? 'drop' : (cap ? 'capture' : 'move');
+  const dur = kind === 'drop' ? 0.28 : (kind === 'capture' ? 0.80 : 0.32);
+  return new Promise(res => {
+    anim = { from, to, moverColor, cap, capColor, capType, kind, t:0, dur, resolve:res };
+    sceneDirty = true; hlDirty = true;
+  });
+}
+async function humanPlay(mv){
+  clearSelection(); hlDirty = true;
+  await commitMove(mv);
+  if (checkTerminalAfterMove('あなた')) return;
+  scheduleNpc();
+}
+
+/* ─ NPC（play.html と同じ。npc.js 経由で Worker） ─ */
+async function scheduleNpc(){
+  thinking = true; legal = []; hlDirty = true; renderStatus();
+  const sfen = toSfen(pos);
+  let res; try { res = await npc.think(sfen, level); } catch { res = null; }
+  thinking = false;
+  if (over || toSfen(pos) !== sfen) return;              // 投了・新規対局で局面が変わっていたら破棄
+
+  let usi = res && res.usi;
+  const legalNow = legalMoves(pos);
+  const legalUsi = new Set(legalNow.map(moveToUsi));
+  let note;
+  if (usi && legalUsi.has(usi)){
+    note = res.fallback ? '退避手' : `worker d${res.depth ?? '?'} ${res.ms ?? '?'}ms`;
+  } else {
+    if (legalNow.length === 0){ over = true; showResult('あなたの勝ち', 'NPC は指す手がありません'); return; }
+    usi = moveToUsi(legalNow[Math.floor(Math.random()*legalNow.length)]); note = '退避手';
+  }
+  await commitMove(usiToMove(usi));
+  infoEl.textContent = `NPC: ${usi}（${note}）`;
+  if (checkTerminalAfterMove('NPC')) return;
+  legal = legalMoves(pos); hlDirty = true; renderStatus();
+}
+
+/* ─ 決着（合法手が無ければ手番側の負け。判定はルール層のみ） ─ */
+function checkTerminalAfterMove(mover){
+  if (legalMoves(pos).length > 0){ renderStatus(); return false; }
+  over = true; hlDirty = true;
+  const how = inCheck(pos) ? '詰み' : '手詰まり';
+  showResult(mover === 'あなた' ? 'あなたの勝ち' : 'あなたの負け', `${mover}の勝ち（${how}）`);
+  return true;
+}
+
+/* ═════════ 画面表示 ═════════ */
+function renderStatus(){
+  if (over) return;
+  const checkSide = inCheck(pos) ? pos.turn : -1;
+  let t = thinking ? 'NPC 考え中…' : (anim ? '…' : (pos.turn === humanColor ? 'あなたの手番' : 'NPC の手番'));
+  if (!thinking && !anim && pos.turn === humanColor && selected){
+    const nm = selected.kind === 'board' ? KANJI[typeOf(pos.board[selected.sq])] : KANJI[selected.pt];
+    if (nm) t += `・${nm}`;
+  }
+  if (checkSide >= 0 && !anim) t += '（王手）';
+  turnEl.textContent = t;
+  turnEl.classList.toggle('check', checkSide >= 0 && !anim);
+}
+function renderHands(){
+  renderHand($('handTop'), 1 - humanColor, false);
+  renderHand($('handBottom'), humanColor, true);
+}
+function renderHand(el, color, mine){
+  el.innerHTML = ''; let any = false;
+  if (mine){ const s = document.createElement('span'); s.className='lead'; s.textContent='持ち駒'; el.appendChild(s); }
+  for (const t of HAND_ORDER){
+    const n = pos.hands[color][t]; if (!n) continue; any = true;
+    const e = document.createElement('div'); e.className = 'koma'; e.textContent = KANJI[t];
+    if (mine){ e.dataset.pt = t;
+      if (selected && selected.kind==='hand' && selected.pt===t) e.classList.add('sel'); }
+    if (n > 1){ const b = document.createElement('span'); b.className='n'; b.textContent=n; e.appendChild(b); }
+    el.appendChild(e);
+  }
+  if (!any){ const s = document.createElement('span'); s.className='empty'; s.textContent = mine ? 'なし' : ''; el.appendChild(s); }
+}
+function showResult(big, sub){
+  $('resultBig').textContent = big; $('resultSub').textContent = sub;
+  $('resultOv').classList.add('on');
+  turnEl.textContent = big; turnEl.classList.remove('check');
+}
+
+/* ═════════ 入力 ═════════ */
+const raycaster = new THREE.Raycaster();
+const groundPlane = new THREE.Plane(new THREE.Vector3(0,1,0), 0);
+const hitPt = new THREE.Vector3();
+canvas.addEventListener('click', e => {
+  if (over || thinking || anim || pos.turn !== humanColor) return;
+  const rect = canvas.getBoundingClientRect();
+  const nx = ((e.clientX-rect.left)/rect.width)*2 - 1;
+  const ny = -((e.clientY-rect.top)/rect.height)*2 + 1;
+  raycaster.setFromCamera({x:nx, y:ny}, camera);
+  if (!raycaster.ray.intersectPlane(groundPlane, hitPt)) return;
+  const file = Math.round(hitPt.x/SQ + (N-1)/2);
+  const rank = Math.round(hitPt.z/SQ + (N-1)/2);
+  if (file < 0 || file > 8 || rank < 0 || rank > 8) return;
+  const sq = frToSq(file, rank);
+  if (targets.has(sq)){ chooseTarget(sq); return; }
+  const p = pos.board[sq];
+  if (p !== EMPTY && colorOf(p) === humanColor){ selectBoard(sq); return; }
+  clearSelection(); hlDirty = true; renderStatus();
+});
+$('handBottom').addEventListener('click', e => {
+  if (over || thinking || anim || pos.turn !== humanColor) return;
+  const k = e.target.closest('.koma'); if (!k || k.dataset.pt === undefined) return;
+  const pt = +k.dataset.pt;
+  if (selected && selected.kind==='hand' && selected.pt===pt){ clearSelection(); hlDirty=true; renderStatus(); return; }
+  selectHand(pt);
+});
+$('promoYes').addEventListener('click', () => {
+  $('promoOv').classList.remove('on');
+  const mv = pendingPromo.find(m => (m >> 14) & 1); pendingPromo = null;
+  if (mv !== undefined) humanPlay(mv);
+});
+$('promoNo').addEventListener('click', () => {
+  $('promoOv').classList.remove('on');
+  const mv = pendingPromo.find(m => !((m >> 14) & 1)); pendingPromo = null;
+  if (mv !== undefined) humanPlay(mv);
+});
+$('resultClose').addEventListener('click', () => $('resultOv').classList.remove('on'));
+$('resign').addEventListener('click', () => {
+  if (over) return; over = true; thinking = false; hlDirty = true;
+  showResult('あなたの負け', 'あなたの投了');
+});
+$('newGame').addEventListener('click', newGame);
+
+/* ═════════ 新規対局 ═════════ */
+function newGame(){
+  humanColor = +$('side').value;
+  level = $('level').value;
+  flip = (humanColor === WHITE);
+  let sfen = START_SFEN;
+  try { const q = new URLSearchParams(location.search).get('sfen'); if (q){ parseSfen(q); sfen = q; } }
+  catch { sfen = START_SFEN; }
+  pos = parseSfen(sfen);
+  legal = []; clearSelection(); lastMove = null;
+  thinking = false; over = false; pendingPromo = null; anim = null;
+  $('resultOv').classList.remove('on'); $('promoOv').classList.remove('on');
+  infoEl.textContent = '';
+  npc.newGame();
+  renderHands(); renderStatus();
+  sceneDirty = true; hlDirty = true;
+  if (pos.turn === humanColor){ legal = legalMoves(pos); renderStatus(); hlDirty = true; }
+  else scheduleNpc();
+}
+
+/* ═════════ ループ ═════════ */
+const clock = new THREE.Clock();
+function loop(){
+  requestAnimationFrame(loop);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  uTime.value = clock.getElapsedTime();
+  if (anim){
+    anim.t += dt / anim.dur; sceneDirty = true;
+    if (anim.t >= 1){ const r = anim.resolve; anim = null; sceneDirty = true; hlDirty = true; renderStatus(); if (r) r(); }
+  }
+  if (sceneDirty){ layout(); sceneDirty = false; }
+  if (hlDirty){ layoutHighlights(); hlDirty = false; }
+  renderer.render(scene, camera);
+}
+
+resize();
+newGame();
+loop();
+</script>
+</body>
+</html>
