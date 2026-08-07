@@ -23,15 +23,11 @@
   #info{color:var(--dim);font-size:11px;text-align:right;overflow:hidden;
     text-overflow:ellipsis;white-space:nowrap}
 
-  /* 相手の持ち駒は画面上端の帯に重ねる（盤の奥＝画面上方は空きやすい） */
-  #handTop{position:absolute;top:26px;left:0;right:0;display:flex;flex-wrap:wrap;gap:4px;
-    justify-content:center;padding:2px 8px;pointer-events:none}
-
-  /* 持ち駒は盤上と同じ兵の姿。色で陣営を分け、足元に小さく漢字を添える */
-  .koma{position:relative;width:26px;height:34px;
-    background-size:auto 76%;background-repeat:no-repeat;background-position:center top}
-  .koma.me{background-image:var(--sol-me)}
-  .koma.foe{background-image:var(--sol-foe)}
+  /* 下部の自分の持ち駒。盤上と同じ兵の姿に、足元へ小さく漢字を添える。
+     敵の持ち駒は 3D 空間（奥の地面）に出すので、上部の帯は置かない。 */
+  .koma{position:relative;width:30px;height:40px;cursor:pointer;
+    background-image:var(--sol-me);background-size:auto 76%;
+    background-repeat:no-repeat;background-position:center top}
   .koma .k{position:absolute;left:50%;bottom:0;transform:translateX(-50%);
     font-size:10px;font-weight:700;line-height:1.25;padding:0 2px;border-radius:2px;
     color:#241a11;background:rgba(245,230,190,.9);
@@ -39,9 +35,8 @@
   .koma .n{position:absolute;right:-4px;top:-3px;font-size:9px;color:var(--hit);
     background:var(--bg);border-radius:6px;padding:0 3px;line-height:1.5;
     font-family:ui-monospace,monospace}
-  #handBottom .koma{cursor:pointer;width:30px;height:40px}
-  #handBottom .koma.sel{outline:2px solid var(--hit);outline-offset:2px;border-radius:3px}
-  #handBottom .empty,#handTop .empty{color:var(--dim);font-size:11px;padding:0 6px}
+  .koma.sel{outline:2px solid var(--hit);outline-offset:2px;border-radius:3px}
+  #handBottom .empty{color:var(--dim);font-size:11px;padding:0 6px}
 
   #panel{border-top:1px solid var(--line);background:var(--panel);padding:9px 10px 12px}
   .myhand{display:flex;flex-wrap:wrap;gap:5px;align-items:center;min-height:31px;
@@ -71,7 +66,6 @@
 <div id="app">
   <div id="view">
     <div id="status"><span id="turn">読み込み中…</span><span id="info"></span></div>
-    <div id="handTop"></div>
   </div>
   <div id="panel">
     <div class="myhand" id="handBottom"></div>
@@ -200,9 +194,9 @@ function makeShadowTexture(){
   return new THREE.CanvasTexture(c);
 }
 
-/* 持ち駒も盤上と同じ兵の姿にする。造形は同じ bodyGeom を使い、色ごとに
-   一度だけ小さく描いて PNG にする。以後は静止画像なので対局中の負荷はない。 */
-function makeSoldierIcons(){
+/* 下部UIの自分の持ち駒アイコン。盤上と同じ bodyGeom を自軍色で一度だけ描いて
+   PNG 化する。以後は静止画像なので対局中の負荷はない。 */
+function makeSoldierIcon(hex){
   const W = 128, H = 160;
   const r = new THREE.WebGLRenderer({ antialias:true, alpha:true, preserveDrawingBuffer:true });
   r.setPixelRatio(1); r.setSize(W, H, false); r.setClearColor(0x000000, 0);
@@ -210,18 +204,15 @@ function makeSoldierIcons(){
   sc.add(new THREE.HemisphereLight(0xbfd4e8, 0x2a2216, 0.7));
   const key = new THREE.DirectionalLight(0xfff1d6, 1.15); key.position.set(3, 5, 4); sc.add(key);
   const back = new THREE.DirectionalLight(0x8fa9d8, 0.4);  back.position.set(-4, 2, -3); sc.add(back);
-  const mat = new THREE.MeshLambertMaterial();
-  sc.add(new THREE.Mesh(bodyGeom, mat));
+  sc.add(new THREE.Mesh(bodyGeom, new THREE.MeshLambertMaterial({ color: hex })));
   const cam = new THREE.PerspectiveCamera(30, W/H, 0.1, 10);
   cam.position.set(0, CHAR_H*0.52, 2.15); cam.lookAt(0, CHAR_H*0.46, 0);   // 正面やや上から全身
-  const urls = COLOR.map(hex => { mat.color.setHex(hex); r.render(sc, cam);
-    return r.domElement.toDataURL('image/png'); });
+  r.render(sc, cam);
+  const url = r.domElement.toDataURL('image/png');
   r.dispose();                                   // bodyGeom は共有なので破棄しない
-  return urls;
+  return url;
 }
-const SOLDIER = makeSoldierIcons();              // [0]=自軍(青) [1]=敵軍(赤)
-document.documentElement.style.setProperty('--sol-me',  `url("${SOLDIER[0]}")`);
-document.documentElement.style.setProperty('--sol-foe', `url("${SOLDIER[1]}")`);
+document.documentElement.style.setProperty('--sol-me', `url("${makeSoldierIcon(COLOR[0])}")`);
 
 /* ═════════ 場面（idle-test を流用） ═════════ */
 const view = document.getElementById('view');
@@ -253,7 +244,7 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(GROUND, GROUND),
   new THREE.MeshLambertMaterial({ map: groundTex }));
 ground.rotation.x = -Math.PI/2; scene.add(ground);
 
-// 9×9 は地面に引いた細い線。線より濃くしないので地面の一部に見える。
+// 9×9 は地面に引いた細い線。地面と同じ明度帯の明るい灰にして沈ませない。
 {
   const pts = [], half = N*SQ/2;
   for (let i = 0; i <= N; i++){ const p = -half + i*SQ;
@@ -261,7 +252,7 @@ ground.rotation.x = -Math.PI/2; scene.add(ground);
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
   const lines = new THREE.LineSegments(g, new THREE.LineBasicMaterial({
-    color: 0x2a2012, transparent: true, opacity: 0.28 }));
+    color: 0xd8d3c4, transparent: true, opacity: 0.55 }));
   lines.position.y = 0.004; lines.renderOrder = 2; scene.add(lines);
 }
 
@@ -287,11 +278,14 @@ function wobbleMaterial(color){
   return m;
 }
 
-/* 陣営ごとに 1 つの InstancedMesh。盤上の駒数は変わるので上限で確保し、
+/* 陣営ごとに 1 つの InstancedMesh。盤上の駒と持ち駒を同じメッシュに詰める。
+   片陣営が一度に持てるのは最大でも 39（相手玉が必ず盤に残る）。余裕を見て確保し、
    使わないスロットは縮尺0で隠す（capture-test と同じ隠し方）。 */
-const MAXI = 40;
+const MAXI = 44;
 const jitterBySq = new Float32Array(81);
 for (let i = 0; i < 81; i++) jitterBySq[i] = 0.97 + Math.random()*0.06;
+const jitterHand = new Float32Array(MAXI);
+for (let i = 0; i < MAXI; i++) jitterHand[i] = 0.97 + Math.random()*0.06;
 
 function makeTeamMesh(color){
   const g = bodyGeom.clone();
@@ -335,15 +329,17 @@ const hlGroup = new THREE.Group(); scene.add(hlGroup);
 function tile(color, opacity, size, y){
   const m = new THREE.Mesh(new THREE.PlaneGeometry(size, size),
     new THREE.MeshBasicMaterial({ color, transparent:true, opacity, depthWrite:false }));
-  m.rotation.x = -Math.PI/2; m.userData.y = y; m.visible = false; hlGroup.add(m); return m;
+  m.rotation.x = -Math.PI/2; m.userData.y = y; m.visible = false;
+  m.renderOrder = 4; hlGroup.add(m); return m;   // 明るいマス線より上に出す
 }
 function disc(geom, color, y){
-  const m = new THREE.Mesh(geom, new THREE.MeshBasicMaterial({ color, transparent:true, opacity:0.85, depthWrite:false }));
-  m.rotation.x = -Math.PI/2; m.userData.y = y; m.visible = false; hlGroup.add(m); return m;
+  const m = new THREE.Mesh(geom, new THREE.MeshBasicMaterial({ color, transparent:true, opacity:0.9, depthWrite:false }));
+  m.rotation.x = -Math.PI/2; m.userData.y = y; m.visible = false;
+  m.renderOrder = 4; hlGroup.add(m); return m;
 }
-const selTile   = tile(0xc9a227, 0.34, 0.92, 0.012);
-const checkTile = tile(0xe0653f, 0.40, 0.92, 0.012);
-const lastTiles = [tile(0xc9a227, 0.30, 0.92, 0.011), tile(0xc9a227, 0.30, 0.92, 0.011)];
+const selTile   = tile(0xc9a227, 0.44, 0.92, 0.012);
+const checkTile = tile(0xe0653f, 0.50, 0.92, 0.012);
+const lastTiles = [tile(0xc9a227, 0.40, 0.92, 0.011), tile(0xc9a227, 0.40, 0.92, 0.011)];
 const discGeom  = new THREE.CircleGeometry(0.16, 20);
 const ringGeom  = new THREE.RingGeometry(0.30, 0.44, 22);
 const discPool  = Array.from({length:81}, () => disc(discGeom, 0xc9a227, 0.014));
@@ -434,6 +430,26 @@ function victimEntry(){
            type: a.capType, jitter: jitterBySq[a.to], mx, my, mz };
 }
 
+/* 持ち駒を盤の外の地面に立たせる。手前(near)＝自陣、奥＝敵陣。マス目は作らず、
+   種類ごとにまとめて横に並べ、あふれたら盤から離れる向きへ列を足す。 */
+function addHandEntries(list, color, near){
+  const hand = pos.hands[color];
+  let total = 0; for (const t of HAND_ORDER) total += hand[t];
+  if (!total) return;
+  const perRow = 10, dx = 0.8, dz = 0.85;
+  const ry = near ? 0 : Math.PI, zdir = near ? 1 : -1;
+  const z0 = near ? (N*SQ)/2 + 0.8 : -((N*SQ)/2 + 0.8);
+  let i = 0;
+  for (const t of HAND_ORDER){
+    for (let c = 0; c < hand[t]; c++, i++){
+      const rowN = Math.floor(i / perRow), colN = i - rowN*perRow;
+      const inRow = Math.min(perRow, total - rowN*perRow);
+      list.push({ x: (colN - (inRow-1)/2) * dx, y: 0, z: z0 + zdir*rowN*dz,
+        rx:0, ry, rz:0, type: t, jitter: jitterHand[i % MAXI], mx:1, my:1, mz:1 });
+    }
+  }
+}
+
 function layout(){
   const human = [], opp = [];
   const listFor = c => teamOf(c) === 0 ? human : opp;
@@ -445,6 +461,8 @@ function layout(){
       type: typeOf(p), jitter: jitterBySq[sq], mx:1, my:1, mz:1 });
   }
   if (anim && anim.cap) listFor(anim.capColor).push(victimEntry());
+  addHandEntries(human, humanColor, true);          // 自分の持ち駒＝手前の地面
+  addHandEntries(opp, 1 - humanColor, false);       // 敵の持ち駒＝奥の地面
   writeTeam(instHuman, shadowHuman, human);
   writeTeam(instOpp, shadowOpp, opp);
 }
@@ -453,10 +471,12 @@ function layout(){
 function resize(){
   const w = view.clientWidth, h = view.clientHeight;
   renderer.setSize(w, h, false); camera.aspect = w / h;
-  const halfW = (N*SQ)/2 + 0.1;
+  const halfW = (N*SQ)/2 + 0.35;                    // 両端に少し余白
   const vFov = camera.fov * Math.PI/180;
   const hFov = 2 * Math.atan(Math.tan(vFov/2) * camera.aspect);
-  const distW = halfW / Math.tan(hFov/2);
+  // 盤は手前へ傾くので、いちばん近い手前端の筋がいちばん広く映る。その手前端の
+  // 奥行き(dist − 手前へのはみ出し)で横幅を合わせないと両端の筋が画面外に切れる。
+  const distW = halfW / Math.tan(hFov/2) + (N*SQ)/2 * Math.cos(TILT);
   const halfD = (N*SQ)/2 * Math.cos(TILT) + 0.4;
   const distD = halfD / Math.tan(vFov/2);
   const dist = Math.max(distW, distD);
@@ -578,23 +598,20 @@ function renderStatus(){
   turnEl.textContent = t;
   turnEl.classList.toggle('check', checkSide >= 0 && !anim);
 }
+/* 下部UIは自分の持ち駒だけ（打つための操作面）。敵の持ち駒は 3D 空間に出す。 */
 function renderHands(){
-  renderHand($('handTop'), 1 - humanColor, false);
-  renderHand($('handBottom'), humanColor, true);
-}
-function renderHand(el, color, mine){
-  el.innerHTML = ''; let any = false;
-  if (mine){ const s = document.createElement('span'); s.className='lead'; s.textContent='持ち駒'; el.appendChild(s); }
+  const el = $('handBottom'); el.innerHTML = '';
+  const lead = document.createElement('span'); lead.className='lead'; lead.textContent='持ち駒'; el.appendChild(lead);
+  let any = false;
   for (const t of HAND_ORDER){
-    const n = pos.hands[color][t]; if (!n) continue; any = true;
-    const e = document.createElement('div'); e.className = mine ? 'koma me' : 'koma foe';
+    const n = pos.hands[humanColor][t]; if (!n) continue; any = true;
+    const e = document.createElement('div'); e.className = 'koma'; e.dataset.pt = t;
     const k = document.createElement('span'); k.className = 'k'; k.textContent = KANJI[t]; e.appendChild(k);
-    if (mine){ e.dataset.pt = t;
-      if (selected && selected.kind==='hand' && selected.pt===t) e.classList.add('sel'); }
+    if (selected && selected.kind==='hand' && selected.pt===t) e.classList.add('sel');
     if (n > 1){ const b = document.createElement('span'); b.className='n'; b.textContent=n; e.appendChild(b); }
     el.appendChild(e);
   }
-  if (!any){ const s = document.createElement('span'); s.className='empty'; s.textContent = mine ? 'なし' : ''; el.appendChild(s); }
+  if (!any){ const s = document.createElement('span'); s.className='empty'; s.textContent='なし'; el.appendChild(s); }
 }
 function showResult(big, sub){
   $('resultBig').textContent = big; $('resultSub').textContent = sub;
