@@ -27,17 +27,20 @@
   #handTop{position:absolute;top:26px;left:0;right:0;display:flex;flex-wrap:wrap;gap:4px;
     justify-content:center;padding:2px 8px;pointer-events:none}
 
-  /* 駒（持ち駒の五角形。capture-test の tray と同じ形） */
-  .koma{display:inline-flex;align-items:center;justify-content:center;position:relative;
-    width:22px;height:25px;padding-top:2px;font-size:12px;color:#241a11;
-    clip-path:polygon(50% 0,88% 15%,100% 100%,0 100%,12% 15%);
-    background:linear-gradient(160deg,#f5e4bd,#d6a75e 72%,#b98437);
-    font-family:"Hiragino Mincho ProN","Yu Mincho",serif}
-  .koma .n{position:absolute;right:-3px;bottom:-4px;font-size:9px;color:var(--hit);
+  /* 持ち駒は盤上と同じ兵の姿。色で陣営を分け、足元に小さく漢字を添える */
+  .koma{position:relative;width:26px;height:34px;
+    background-size:auto 76%;background-repeat:no-repeat;background-position:center top}
+  .koma.me{background-image:var(--sol-me)}
+  .koma.foe{background-image:var(--sol-foe)}
+  .koma .k{position:absolute;left:50%;bottom:0;transform:translateX(-50%);
+    font-size:10px;font-weight:700;line-height:1.25;padding:0 2px;border-radius:2px;
+    color:#241a11;background:rgba(245,230,190,.9);
+    font-family:"Hiragino Mincho ProN","Yu Mincho",serif;pointer-events:none}
+  .koma .n{position:absolute;right:-4px;top:-3px;font-size:9px;color:var(--hit);
     background:var(--bg);border-radius:6px;padding:0 3px;line-height:1.5;
     font-family:ui-monospace,monospace}
-  #handBottom .koma{cursor:pointer;width:26px;height:29px;font-size:14px}
-  #handBottom .koma.sel{outline:2px solid var(--hit);outline-offset:1px}
+  #handBottom .koma{cursor:pointer;width:30px;height:40px}
+  #handBottom .koma.sel{outline:2px solid var(--hit);outline-offset:2px;border-radius:3px}
   #handBottom .empty,#handTop .empty{color:var(--dim);font-size:11px;padding:0 6px}
 
   #panel{border-top:1px solid var(--line);background:var(--panel);padding:9px 10px 12px}
@@ -196,6 +199,29 @@ function makeShadowTexture(){
   g.fillStyle = grd; g.fillRect(0, 0, 64, 64);
   return new THREE.CanvasTexture(c);
 }
+
+/* 持ち駒も盤上と同じ兵の姿にする。造形は同じ bodyGeom を使い、色ごとに
+   一度だけ小さく描いて PNG にする。以後は静止画像なので対局中の負荷はない。 */
+function makeSoldierIcons(){
+  const W = 128, H = 160;
+  const r = new THREE.WebGLRenderer({ antialias:true, alpha:true, preserveDrawingBuffer:true });
+  r.setPixelRatio(1); r.setSize(W, H, false); r.setClearColor(0x000000, 0);
+  const sc = new THREE.Scene();
+  sc.add(new THREE.HemisphereLight(0xbfd4e8, 0x2a2216, 0.7));
+  const key = new THREE.DirectionalLight(0xfff1d6, 1.15); key.position.set(3, 5, 4); sc.add(key);
+  const back = new THREE.DirectionalLight(0x8fa9d8, 0.4);  back.position.set(-4, 2, -3); sc.add(back);
+  const mat = new THREE.MeshLambertMaterial();
+  sc.add(new THREE.Mesh(bodyGeom, mat));
+  const cam = new THREE.PerspectiveCamera(30, W/H, 0.1, 10);
+  cam.position.set(0, CHAR_H*0.52, 2.15); cam.lookAt(0, CHAR_H*0.46, 0);   // 正面やや上から全身
+  const urls = COLOR.map(hex => { mat.color.setHex(hex); r.render(sc, cam);
+    return r.domElement.toDataURL('image/png'); });
+  r.dispose();                                   // bodyGeom は共有なので破棄しない
+  return urls;
+}
+const SOLDIER = makeSoldierIcons();              // [0]=自軍(青) [1]=敵軍(赤)
+document.documentElement.style.setProperty('--sol-me',  `url("${SOLDIER[0]}")`);
+document.documentElement.style.setProperty('--sol-foe', `url("${SOLDIER[1]}")`);
 
 /* ═════════ 場面（idle-test を流用） ═════════ */
 const view = document.getElementById('view');
@@ -561,7 +587,8 @@ function renderHand(el, color, mine){
   if (mine){ const s = document.createElement('span'); s.className='lead'; s.textContent='持ち駒'; el.appendChild(s); }
   for (const t of HAND_ORDER){
     const n = pos.hands[color][t]; if (!n) continue; any = true;
-    const e = document.createElement('div'); e.className = 'koma'; e.textContent = KANJI[t];
+    const e = document.createElement('div'); e.className = mine ? 'koma me' : 'koma foe';
+    const k = document.createElement('span'); k.className = 'k'; k.textContent = KANJI[t]; e.appendChild(k);
     if (mine){ e.dataset.pt = t;
       if (selected && selected.kind==='hand' && selected.pt===t) e.classList.add('sel'); }
     if (n > 1){ const b = document.createElement('span'); b.className='n'; b.textContent=n; e.appendChild(b); }
