@@ -26,6 +26,9 @@
   #kifu{position:absolute;top:30px;left:12px;pointer-events:none;white-space:pre;
     font:11px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
     color:rgba(24,20,12,.5)}
+  /* 開発用。40体のスキンメッシュが実機で何フレーム出るかを測るための表示。 */
+  #fps{position:absolute;left:12px;bottom:8px;pointer-events:none;
+    font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums}
 
   /* 下部の自分の持ち駒。盤上と同じ兵の姿に、足元へ小さく漢字を添える。
      敵の持ち駒は 3D 空間（奥の地面）に出すので、上部の帯は置かない。 */
@@ -71,6 +74,7 @@
   <div id="view">
     <div id="status"><span id="turn">読み込み中…</span><span id="info"></span></div>
     <div id="kifu"></div>
+    <div id="fps"></div>
   </div>
   <div id="panel">
     <div class="myhand" id="handBottom"></div>
@@ -106,6 +110,9 @@
 
 <!-- 盤面の描画は lab/idle-test.html と同じ Three.js。GitHub Pages では CDN 直リンクで届く。 -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<!-- スキン付きGLBの読み込みと複製に使う。届かなければ骨なしGLBへ退避する。 -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 <script type="module">
 import {
   START_SFEN, parseSfen, toSfen, legalMoves,
@@ -366,9 +373,74 @@ function makeTeamMesh(geom, material){
   return mesh;
 }
 
-// 兵のモデルを読み込む。自軍=fu_blue／敵軍=fu_red。読み込めなければ箱の素体へ退避。
-let instHuman, instOpp;
-{
+/* ── 骨付きモデル（採用時の主経路）──────────────────────────────
+   スキン＋待機アニメは自作パーサでは読めないため GLTFLoader を使う。
+   40体は個別の SkinnedMesh。InstancedMesh は骨ごとの姿勢を持てないので使えない。
+   1体を人数ぶん複製し、個体ごとに再生位置と速度をずらして集団の同期を崩す。 */
+const POOL = MAXI;                 // 片陣営の最大表示数（相手玉が必ず残るので実質39ほど）
+function loadGLTF(url){
+  return new Promise((res, rej) => {
+    if (!THREE.GLTFLoader) return rej(new Error('GLTFLoader 未読込'));
+    new THREE.GLTFLoader().load(url, res, undefined, rej);
+  });
+}
+/* gltf を POOL 体ぶん複製する。テクスチャは 1 枚を共有し、材質も陣営で 1 つ。
+   骨（Object3D）とミキサーだけ個体ごとに持つ。 */
+function makePool(gltf){
+  const clip = gltf.animations[0];
+  let src = null; gltf.scene.traverse(o => { if (o.isSkinnedMesh) src = o; });
+  const mat = new THREE.MeshLambertMaterial({ map: src.material.map, skinning: true });
+  const pool = [];
+  for (let k = 0; k < POOL; k++){
+    const root = THREE.SkeletonUtils.clone(gltf.scene);
+    root.traverse(o => { if (o.isSkinnedMesh){ o.material = mat; o.frustumCulled = false; } });
+    root.visible = false; scene.add(root);
+    const mixer = new THREE.AnimationMixer(root);
+    const action = mixer.clipAction(clip); action.play();
+    action.time = Math.random() * clip.duration;   // 個体ごとに再生位置をずらす
+    mixer.timeScale = 0.9 + Math.random()*0.2;      // 速度も ±10% ばらつかせる
+    pool.push({ root, mixer });
+  }
+  return pool;
+}
+/* 骨付きモデルからも持ち駒アイコンを作る。1 体を安置ポーズのまま正面から撮る。 */
+function makeSoldierIconFromObject(obj){
+  const W = 128, H = 160;
+  const r = new THREE.WebGLRenderer({ antialias:true, alpha:true, preserveDrawingBuffer:true });
+  r.setPixelRatio(1); r.setSize(W, H, false); r.setClearColor(0x000000, 0);
+  const sc = new THREE.Scene();
+  sc.add(new THREE.HemisphereLight(0xbfd4e8, 0x2a2216, 0.7));
+  const key = new THREE.DirectionalLight(0xfff1d6, 1.15); key.position.set(3, 5, 4); sc.add(key);
+  const back = new THREE.DirectionalLight(0x8fa9d8, 0.4);  back.position.set(-4, 2, -3); sc.add(back);
+  sc.add(obj);
+  const bb = new THREE.Box3().setFromObject(obj), hh = bb.max.y - bb.min.y, cy = (bb.max.y + bb.min.y)/2;
+  const cam = new THREE.PerspectiveCamera(30, W/H, 0.1, 10);
+  cam.position.set(0, cy + hh*0.05, hh*3.05); cam.lookAt(0, cy - hh*0.04, 0);
+  r.render(sc, cam);
+  const url = r.domElement.toDataURL('image/png');
+  r.dispose(); sc.remove(obj);
+  return url;
+}
+
+/* 兵のモデルを読み込む。優先＝骨付き（待機アニメ入り）。失敗したら骨なし GLB、
+   それも失敗したら箱の素体へ退避する。骨なし・箱は従来の InstancedMesh＋頂点揺れ。 */
+let skinned = false;                  // 骨付きを採用できたか（描画経路の分岐）
+let humanPool = [], oppPool = [];     // 骨付き：陣営ごとの SkinnedMesh 群
+let instHuman = null, instOpp = null; // 骨なし・箱：陣営ごとの InstancedMesh
+try {
+  const [blue, red] = await Promise.all([
+    loadGLTF('./assets/fu_blue_idle.glb'), loadGLTF('./assets/fu_red_idle.glb'),
+  ]);
+  humanPool = makePool(blue);         // 手前・自軍
+  oppPool   = makePool(red);          // 奥・敵軍
+  const iconClone = THREE.SkeletonUtils.clone(blue.scene);
+  let im = null; blue.scene.traverse(o => { if (o.isSkinnedMesh) im = o; });
+  iconClone.traverse(o => { if (o.isSkinnedMesh) o.material = new THREE.MeshLambertMaterial({ map: im.material.map, skinning: true }); });
+  document.documentElement.style.setProperty('--sol-me', `url("${makeSoldierIconFromObject(iconClone)}")`);
+  PIECE_BASE = 1.0;                   // モデルは全高 0.70 で作成済
+  skinned = true;
+} catch (eSkin) {
+  console.warn('骨付きモデル読み込み失敗、骨なし／箱へ退避:', eSkin && eSkin.message);
   let hg, og, hm, om, iconGeom, iconParams;
   try {
     const [blue, red] = await Promise.all([
@@ -383,7 +455,7 @@ let instHuman, instOpp;
     hm = wobbleMaterial({ color: COLOR[0] }); om = wobbleMaterial({ color: COLOR[1] });
     iconGeom = bodyGeom; iconParams = { color: COLOR[0] };
     PIECE_BASE = BASE;
-    console.warn('GLB 読み込み失敗、箱の素体へ退避:', err && err.message);
+    console.warn('骨なし GLB も失敗、箱の素体へ退避:', err && err.message);
   }
   instHuman = makeTeamMesh(hg, hm);   // 手前・自軍
   instOpp   = makeTeamMesh(og, om);   // 奥・敵軍
@@ -460,7 +532,25 @@ function layoutHighlights(){
 /* ═════════ 駒の配置（毎フレーム pos から作る。移動中の駒だけ上書き） ═════════ */
 const dummy = new THREE.Object3D();
 const shadowDummy = new THREE.Object3D();
-function writeTeam(mesh, shadowMesh, list){
+let humanActive = 0, oppActive = 0;   // 骨付き時：ミキサーを回す個体数
+
+/* 骨付き：陣営の個体を list の姿勢へ置く。余りは不可視にして描画から外す。 */
+function applyTeamSkinned(pool, list, setActive){
+  const n = Math.min(list.length, POOL);
+  for (let k = 0; k < POOL; k++){
+    const m = pool[k];
+    if (k < n){
+      const e = list[k], base = PIECE_BASE * scaleOf(e.type) * e.jitter;
+      m.root.position.set(e.x, e.y, e.z);
+      m.root.rotation.set(e.rx, e.ry, e.rz);
+      m.root.scale.set(base*e.mx, base*e.my, base*e.mz);
+      m.root.visible = true;
+    } else m.root.visible = false;
+  }
+  setActive(n);
+}
+/* 骨なし・箱：陣営を 1 つの InstancedMesh に詰める（従来どおり）。 */
+function writeTeamInstanced(mesh, list){
   for (let k = 0; k < MAXI; k++){
     if (k < list.length){
       const e = list[k], base = PIECE_BASE * scaleOf(e.type) * e.jitter;
@@ -468,20 +558,28 @@ function writeTeam(mesh, shadowMesh, list){
       dummy.rotation.set(e.rx, e.ry, e.rz);
       dummy.scale.set(base*e.mx, base*e.my, base*e.mz);
       dummy.updateMatrix(); mesh.setMatrixAt(k, dummy.matrix);
-      // 楕円影は足元に置き、跳ねるほど縮めて接地感を残す。
+    } else {
+      dummy.position.set(0,-99,0); dummy.rotation.set(0,0,0); dummy.scale.setScalar(0);
+      dummy.updateMatrix(); mesh.setMatrixAt(k, dummy.matrix);
+    }
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+}
+/* 足元の影は骨付き・骨なしとも同じ InstancedMesh。跳ねるほど縮めて接地感を残す。 */
+function writeShadows(shadowMesh, list){
+  for (let k = 0; k < MAXI; k++){
+    if (k < list.length){
+      const e = list[k], base = PIECE_BASE * scaleOf(e.type) * e.jitter;
       const grip = 1 - clamp01(e.y * 1.4) * 0.7;
       shadowDummy.position.set(e.x, 0.006, e.z);
       shadowDummy.rotation.set(-Math.PI/2, 0, 0);
       shadowDummy.scale.set(base*e.mx*0.66*grip, base*e.mz*0.44*grip, 1);
       shadowDummy.updateMatrix(); shadowMesh.setMatrixAt(k, shadowDummy.matrix);
     } else {
-      dummy.position.set(0,-99,0); dummy.rotation.set(0,0,0); dummy.scale.setScalar(0);
-      dummy.updateMatrix(); mesh.setMatrixAt(k, dummy.matrix);
       shadowDummy.position.set(0,-99,0); shadowDummy.scale.setScalar(0);
       shadowDummy.updateMatrix(); shadowMesh.setMatrixAt(k, shadowDummy.matrix);
     }
   }
-  mesh.instanceMatrix.needsUpdate = true;
   shadowMesh.instanceMatrix.needsUpdate = true;
 }
 const teamOf = color => color === humanColor ? 0 : 1;   // 0=手前 1=奥
@@ -555,8 +653,15 @@ function layout(){
   if (anim && anim.cap) listFor(anim.capColor).push(victimEntry());
   addHandEntries(human, humanColor, true);          // 自分の持ち駒＝手前の地面
   addHandEntries(opp, 1 - humanColor, false);       // 敵の持ち駒＝奥の地面
-  writeTeam(instHuman, shadowHuman, human);
-  writeTeam(instOpp, shadowOpp, opp);
+  if (skinned){
+    applyTeamSkinned(humanPool, human, n => humanActive = n);
+    applyTeamSkinned(oppPool,   opp,  n => oppActive   = n);
+  } else {
+    writeTeamInstanced(instHuman, human);
+    writeTeamInstanced(instOpp,   opp);
+  }
+  writeShadows(shadowHuman, human);
+  writeShadows(shadowOpp,   opp);
 }
 
 /* ═════════ 画面合わせ（idle-test を流用） ═════════ */
@@ -786,10 +891,22 @@ function newGame(){
 
 /* ═════════ ループ ═════════ */
 const clock = new THREE.Clock();
+const fpsEl = $('fps');
+let fpsAccum = 0, fpsFrames = 0;
+/* 待機モーションを進める。骨付きは各個体のミキサー、骨なし・箱は頂点揺れの時刻。 */
+function updateAnims(dt){
+  if (skinned){
+    for (let i = 0; i < humanActive; i++) humanPool[i].mixer.update(dt);
+    for (let i = 0; i < oppActive;   i++) oppPool[i].mixer.update(dt);
+  } else {
+    uTime.value = clock.getElapsedTime();
+  }
+}
 function loop(){
   requestAnimationFrame(loop);
-  const dt = Math.min(clock.getDelta(), 0.05);
-  uTime.value = clock.getElapsedTime();
+  const raw = clock.getDelta();
+  const dt = Math.min(raw, 0.05);
+  updateAnims(dt);
   if (anim){
     anim.t += dt / anim.dur; sceneDirty = true;
     if (anim.t >= 1){ const r = anim.resolve; anim = null; sceneDirty = true; hlDirty = true; renderStatus(); if (r) r(); }
@@ -797,6 +914,9 @@ function loop(){
   if (sceneDirty){ layout(); sceneDirty = false; }
   if (hlDirty){ layoutHighlights(); hlDirty = false; }
   renderer.render(scene, camera);
+  // 実測用の fps（クランプ前の生 dt で計り、重い端末ほど正しく低く出す）。
+  fpsAccum += raw; fpsFrames++;
+  if (fpsAccum >= 0.5){ fpsEl.textContent = Math.round(fpsFrames / fpsAccum) + ' fps'; fpsAccum = 0; fpsFrames = 0; }
 }
 
 resize();
