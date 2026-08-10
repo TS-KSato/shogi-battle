@@ -93,6 +93,7 @@
       <div class="grp">
         <button class="primary" id="newGame">新規対局</button>
         <button class="ghost" id="resign">投了</button>
+        <button class="ghost" id="reset" title="拡大を等倍に戻す">等倍</button>
       </div>
     </div>
   </div>
@@ -160,6 +161,7 @@ const BASE_NAME = ['fu','kyo','kei','gin','kin','kaku','hisha','gyoku'];
 const scaleOf = t => SCALE[BASE_NAME[baseOf(t)]];
 
 const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
+const clamp = (v,a,b) => v < a ? a : v > b ? b : v;
 const seg = (u,a,b) => clamp01((u - a) / (b - a));
 const outCubic = t => 1 - Math.pow(1 - t, 3);
 const inCubic  = t => t * t * t;
@@ -664,6 +666,31 @@ function layout(){
   writeShadows(shadowOpp,   opp);
 }
 
+/* ═════════ 拡大・視点移動（俯角35度・回転なしのまま、投影行列だけで拡大／移動）═════════
+   カメラの位置と向きは動かさず、投影行列を等倍(zoom=1)から最大3倍まで拡大し、
+   pan で切り取り位置をずらす「デジタルズーム」。レイキャストは同じ逆行列を使うので、
+   拡大・移動してもタップは正しいマスに当たる（俯角も向きも一切変わらない）。 */
+let zoom = 1, panX = 0, panY = 0;             // pan は NDC 単位のずらし量
+let baseE0 = 1, baseE5 = 1;                    // 等倍時の投影スケール（resize で確定）
+function applyView(){
+  const e = camera.projectionMatrix.elements;
+  e[0] = baseE0 * zoom;                        // 横スケール
+  e[5] = baseE5 * zoom;                        // 縦スケール
+  e[8] = -panX;                                // 横のずらし
+  e[9] = LENS * zoom - panY;                   // レンズシフト（下寄せ）＋縦のずらし
+  camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
+}
+/* pan を等倍で見えていた範囲の内側に制限する。等倍のNDC[-1,1]は盤・持ち駒・空を
+   ちょうど収めた画。ndc0=(ndc'+pan)/zoom を [-1,1] に収める条件が |pan|≤zoom-1。
+   これで拡大しても等倍の画の外（盤から離れた地面）へは出ない。 */
+function clampView(){
+  zoom = clamp(zoom, 1, 3);
+  if (zoom <= 1){ zoom = 1; panX = 0; panY = 0; return; }
+  const lim = zoom - 1;
+  panX = clamp(panX, -lim, lim);
+  panY = clamp(panY, -lim, lim);
+}
+
 /* ═════════ 画面合わせ（idle-test を流用） ═════════ */
 function resize(){
   const w = view.clientWidth, h = view.clientHeight;
@@ -679,10 +706,9 @@ function resize(){
   const dist = Math.max(distW, distD);
   camera.position.set(TARGET.x, TARGET.y + dist*Math.sin(TILT), TARGET.z + dist*Math.cos(TILT));
   camera.lookAt(TARGET); camera.updateProjectionMatrix();
-  // レンズシフトで盤を下へ寄せる（35度では盤が縦に薄いので、余白を上の空側へ集める）。
-  // 投影行列を直接ずらすため逆行列も作り直す。レイキャストは逆行列を使うので追従する。
-  camera.projectionMatrix.elements[9] = LENS;
-  camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
+  baseE0 = camera.projectionMatrix.elements[0];     // 等倍の投影スケールを控える
+  baseE5 = camera.projectionMatrix.elements[5];
+  clampView(); applyView();                          // 拡大中の resize でも破綻しない
   // 手前の地面ははっきり、遠くは空へ溶かす。盤の広さに合わせて距離を置く。
   scene.fog.near = dist - 4; scene.fog.far = dist + 14;
 }
@@ -828,11 +854,13 @@ function renderKifu(){ $('kifu').textContent = kifu.slice(-10).join('\n'); }
 const raycaster = new THREE.Raycaster();
 const groundPlane = new THREE.Plane(new THREE.Vector3(0,1,0), 0);
 const hitPt = new THREE.Vector3();
-canvas.addEventListener('click', e => {
+/* 指が動かなかったタップだけを駒の選択に使う。拡大・移動しても投影の逆行列を
+   使うので、レイは正しいマスへ当たる。 */
+function handleTap(clientX, clientY){
   if (over || thinking || anim || pos.turn !== humanColor) return;
   const rect = canvas.getBoundingClientRect();
-  const nx = ((e.clientX-rect.left)/rect.width)*2 - 1;
-  const ny = -((e.clientY-rect.top)/rect.height)*2 + 1;
+  const nx = ((clientX-rect.left)/rect.width)*2 - 1;
+  const ny = -((clientY-rect.top)/rect.height)*2 + 1;
   raycaster.setFromCamera({x:nx, y:ny}, camera);
   if (!raycaster.ray.intersectPlane(groundPlane, hitPt)) return;
   const file = Math.round(hitPt.x/SQ + (N-1)/2);
@@ -843,7 +871,76 @@ canvas.addEventListener('click', e => {
   const p = pos.board[sq];
   if (p !== EMPTY && colorOf(p) === humanColor){ selectBoard(sq); return; }
   clearSelection(); hlDirty = true; renderStatus();
+}
+
+/* ピンチで拡大縮小、1本指ドラッグで視点移動（拡大時のみ）、動かなければタップ。 */
+const pointers = new Map();          // pointerId → {x,y}
+let gesture = 'idle';                // 'tap' | 'drag' | 'pinch' | 'idle'
+let moved = false, tapStart = null, dragLast = null, pinchStart = null;
+const TAP_SLOP = 10;                 // これ以上動いたらドラッグ扱い（CSS px）
+function ndcOf(clientX, clientY){
+  const r = canvas.getBoundingClientRect();
+  return { x: ((clientX-r.left)/r.width)*2 - 1, y: -((clientY-r.top)/r.height)*2 + 1 };
+}
+canvas.addEventListener('pointerdown', e => {
+  canvas.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
+  if (pointers.size >= 2){
+    const [a,b] = [...pointers.values()];
+    const mid = ndcOf((a.x+b.x)/2, (a.y+b.y)/2);
+    pinchStart = { dist: Math.hypot(a.x-b.x, a.y-b.y), zoom, mid, panX, panY };
+    gesture = 'pinch'; moved = true;
+  } else {
+    tapStart = { x:e.clientX, y:e.clientY }; gesture = 'tap'; moved = false;
+  }
 });
+canvas.addEventListener('pointermove', e => {
+  const p = pointers.get(e.pointerId); if (!p) return;
+  p.x = e.clientX; p.y = e.clientY;
+  if (gesture === 'pinch' && pointers.size >= 2){
+    const [a,b] = [...pointers.values()];
+    const zo = pinchStart.zoom;
+    const zn = clamp(zo * (Math.hypot(a.x-b.x, a.y-b.y) / pinchStart.dist), 1, 3);
+    const mid = pinchStart.mid;                       // ピンチ中心の盤点を保つ
+    panX = pinchStart.panX + (1 - zn/zo) * (mid.x - pinchStart.panX);
+    panY = pinchStart.panY + (1 - zn/zo) * (mid.y - pinchStart.panY);
+    zoom = zn; clampView(); applyView();
+  } else if (pointers.size === 1 && (gesture === 'tap' || gesture === 'drag')){
+    if (!moved && Math.hypot(e.clientX-tapStart.x, e.clientY-tapStart.y) > TAP_SLOP){
+      moved = true;                                   // 指が動いた＝タップではない
+      if (zoom > 1){ gesture = 'drag'; dragLast = { x:e.clientX, y:e.clientY }; }
+    }
+    if (gesture === 'drag'){                           // 拡大時のみ視点移動（指に追従）
+      const r = canvas.getBoundingClientRect();
+      panX += ((e.clientX - dragLast.x)/r.width)*2;
+      panY -= ((e.clientY - dragLast.y)/r.height)*2;
+      dragLast = { x:e.clientX, y:e.clientY };
+      clampView(); applyView();
+    }
+  }
+});
+function endPointer(e){
+  const wasTap = gesture === 'tap' && !moved && pointers.size === 1;
+  pointers.delete(e.pointerId);
+  if (wasTap) handleTap(e.clientX, e.clientY);
+  if (pointers.size === 0){ gesture = 'idle'; pinchStart = null; }
+  else if (pointers.size === 1){                       // ピンチ→片指：タップにはしない
+    const p = [...pointers.values()][0];
+    tapStart = { x:p.x, y:p.y }; dragLast = { x:p.x, y:p.y };
+    gesture = 'drag'; moved = true;
+  }
+}
+canvas.addEventListener('pointerup', endPointer);
+canvas.addEventListener('pointercancel', endPointer);
+// ホイールでも拡大（PC・動作確認用）。カーソル位置を中心に拡大する。
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const m = ndcOf(e.clientX, e.clientY), zo = zoom;
+  const zn = clamp(zoom * Math.exp(-e.deltaY * 0.0015), 1, 3);
+  panX += (1 - zn/zo) * (m.x - panX);
+  panY += (1 - zn/zo) * (m.y - panY);
+  zoom = zn; clampView(); applyView();
+}, { passive:false });
 $('handBottom').addEventListener('click', e => {
   if (over || thinking || anim || pos.turn !== humanColor) return;
   const k = e.target.closest('.koma'); if (!k || k.dataset.pt === undefined) return;
@@ -867,6 +964,7 @@ $('resign').addEventListener('click', () => {
   showResult('あなたの負け', 'あなたの投了');
 });
 $('newGame').addEventListener('click', newGame);
+$('reset').addEventListener('click', () => { zoom = 1; panX = 0; panY = 0; applyView(); });
 
 /* ═════════ 新規対局 ═════════ */
 function newGame(){
