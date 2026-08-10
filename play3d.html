@@ -272,12 +272,20 @@ async function loadGLB(url){
   return { geometry: geom, texture: tex };
 }
 
+/* アイコンは駒種ぶん複数枚を描くので、WebGL コンテキストは1つだけ使い回す。
+   都度 new すると（dispose してもコンテキストが残り）上限に触れて描画が空になる。 */
+let iconRenderer = null;
+function getIconRenderer(){
+  if (!iconRenderer){
+    iconRenderer = new THREE.WebGLRenderer({ antialias:true, alpha:true, preserveDrawingBuffer:true });
+    iconRenderer.setPixelRatio(1); iconRenderer.setSize(128, 160, false); iconRenderer.setClearColor(0x000000, 0);
+  }
+  return iconRenderer;
+}
 /* 下部UIの自分の持ち駒アイコン。盤上と同じ形を一度だけ描いて PNG 化する。
    以後は静止画像なので対局中の負荷はない。 */
 function makeSoldierIcon(geometry, matParams){
-  const W = 128, H = 160;
-  const r = new THREE.WebGLRenderer({ antialias:true, alpha:true, preserveDrawingBuffer:true });
-  r.setPixelRatio(1); r.setSize(W, H, false); r.setClearColor(0x000000, 0);
+  const W = 128, H = 160, r = getIconRenderer();
   const sc = new THREE.Scene();
   sc.add(new THREE.HemisphereLight(0xbfd4e8, 0x2a2216, 0.7));
   const key = new THREE.DirectionalLight(0xfff1d6, 1.15); key.position.set(3, 5, 4); sc.add(key);
@@ -290,8 +298,7 @@ function makeSoldierIcon(geometry, matParams){
   const cam = new THREE.PerspectiveCamera(30, W/H, 0.1, 10);
   cam.position.set(0, cy + hh*0.05, hh*3.05); cam.lookAt(0, cy - hh*0.04, 0);   // 正面やや上から全身
   r.render(sc, cam);
-  const url = r.domElement.toDataURL('image/png');
-  r.dispose();                                    // 形状は共有なので破棄しない
+  const url = r.domElement.toDataURL('image/png');   // 直後に読むので描画は残る
   return url;
 }
 
@@ -387,23 +394,24 @@ function makeTeamMesh(geom, material){
 
 /* ── 骨付きモデル（採用時の主経路）──────────────────────────────
    スキン＋待機アニメは自作パーサでは読めないため GLTFLoader を使う。
-   40体は個別の SkinnedMesh。InstancedMesh は骨ごとの姿勢を持てないので使えない。
-   1体を人数ぶん複製し、個体ごとに再生位置と速度をずらして集団の同期を崩す。 */
-const POOL = MAXI;                 // 片陣営の最大表示数（相手玉が必ず残るので実質39ほど）
+   駒種ごとに別モデル。個体は個別の SkinnedMesh（InstancedMesh は骨の姿勢を持てない）。
+   1体を家族の最大数ぶん複製し、個体ごとに再生位置と速度をずらして同期を崩す。 */
+/* 片陣営が一度に持てる各駒種の最大数（成り駒は元の駒に数える）。少し余裕を持たせる。 */
+const POOL_CAP = { fu:20, kyo:4, kei:4, gin:4, kin:4, kaku:2, hisha:2, gyoku:2 };
 function loadGLTF(url){
   return new Promise((res, rej) => {
     if (!THREE.GLTFLoader) return rej(new Error('GLTFLoader 未読込'));
     new THREE.GLTFLoader().load(url, res, undefined, rej);
   });
 }
-/* gltf を POOL 体ぶん複製する。テクスチャは 1 枚を共有し、材質も陣営で 1 つ。
-   骨（Object3D）とミキサーだけ個体ごとに持つ。 */
-function makePool(gltf){
+/* gltf を size 体ぶん複製する。テクスチャは 1 枚を共有し、材質もこのプールで 1 つ。
+   骨（Object3D）とミキサー（駒種ごとの待機クリップ）だけ個体ごとに持つ。 */
+function makePool(gltf, size){
   const clip = gltf.animations[0];
   let src = null; gltf.scene.traverse(o => { if (o.isSkinnedMesh) src = o; });
   const mat = new THREE.MeshLambertMaterial({ map: src.material.map, skinning: true });
-  const pool = [];
-  for (let k = 0; k < POOL; k++){
+  const pool = []; pool.active = 0;
+  for (let k = 0; k < size; k++){
     const root = THREE.SkeletonUtils.clone(gltf.scene);
     root.traverse(o => { if (o.isSkinnedMesh){ o.material = mat; o.frustumCulled = false; } });
     root.visible = false; scene.add(root);
@@ -415,41 +423,65 @@ function makePool(gltf){
   }
   return pool;
 }
+/* 骨付き gltf から持ち駒アイコンを1枚作る（自軍＝青。盤上と同じ奥向きで撮る）。 */
+function iconFromGltf(gltf){
+  const clone = THREE.SkeletonUtils.clone(gltf.scene);
+  let src = null; gltf.scene.traverse(o => { if (o.isSkinnedMesh) src = o; });
+  clone.traverse(o => { if (o.isSkinnedMesh){ o.material = new THREE.MeshLambertMaterial({ map: src.material.map, skinning: true }); o.frustumCulled = false; } });
+  return `url("${makeSoldierIconFromObject(clone)}")`;
+}
 /* 骨付きモデルからも持ち駒アイコンを作る。1 体を安置ポーズのまま正面から撮る。 */
 function makeSoldierIconFromObject(obj){
-  const W = 128, H = 160;
-  const r = new THREE.WebGLRenderer({ antialias:true, alpha:true, preserveDrawingBuffer:true });
-  r.setPixelRatio(1); r.setSize(W, H, false); r.setClearColor(0x000000, 0);
+  const W = 128, H = 160, r = getIconRenderer();
   const sc = new THREE.Scene();
   sc.add(new THREE.HemisphereLight(0xbfd4e8, 0x2a2216, 0.7));
   const key = new THREE.DirectionalLight(0xfff1d6, 1.15); key.position.set(3, 5, 4); sc.add(key);
   const back = new THREE.DirectionalLight(0x8fa9d8, 0.4);  back.position.set(-4, 2, -3); sc.add(back);
   obj.rotation.y = Math.PI;                         // 盤上の自軍と同じ向き（奥を向く）
+  let sm = null; obj.traverse(o => { if (o.isSkinnedMesh){ o.frustumCulled = false; if (!sm) sm = o; } });
   sc.add(obj);
-  const bb = new THREE.Box3().setFromObject(obj), hh = bb.max.y - bb.min.y, cy = (bb.max.y + bb.min.y)/2;
+  // 骨付きは skin 変換で立つので、ノード変換込みの setFromObject では箱が潰れる（Armature が微小scale）。
+  // 描画される大きさはジオメトリ本来のバウンディング（全高約0.70・足元原点）に一致するのでそれで構図を取る。
+  let hh, cy;
+  if (sm){ sm.geometry.computeBoundingBox(); const gb = sm.geometry.boundingBox; hh = gb.max.y - gb.min.y; cy = (gb.max.y + gb.min.y)/2; }
+  else { const bb = new THREE.Box3().setFromObject(obj); hh = bb.max.y - bb.min.y; cy = (bb.max.y + bb.min.y)/2; }
   const cam = new THREE.PerspectiveCamera(30, W/H, 0.1, 10);
   cam.position.set(0, cy + hh*0.05, hh*3.05); cam.lookAt(0, cy - hh*0.04, 0);
   r.render(sc, cam);
   const url = r.domElement.toDataURL('image/png');
-  r.dispose(); sc.remove(obj);
+  sc.remove(obj);
   return url;
 }
 
 /* 兵のモデルを読み込む。優先＝骨付き（待機アニメ入り）。失敗したら骨なし GLB、
    それも失敗したら箱の素体へ退避する。骨なし・箱は従来の InstancedMesh＋頂点揺れ。 */
 let skinned = false;                  // 骨付きを採用できたか（描画経路の分岐）
-let humanPool = [], oppPool = [];     // 骨付き：陣営ごとの SkinnedMesh 群
+let humanPools = {}, oppPools = {};   // 骨付き：駒種名→個体プール（陣営別）
 let instHuman = null, instOpp = null; // 骨なし・箱：陣営ごとの InstancedMesh
+const handIcons = {};                 // 骨付き：駒種名→持ち駒アイコン（自軍）
 try {
-  const [blue, red] = await Promise.all([
+  // 歩は全駒種の代用元。まず歩を読み、失敗したら骨なし／箱へ退避する。
+  const [fuBlue, fuRed] = await Promise.all([
     loadGLTF('./assets/fu_blue_idle.glb'), loadGLTF('./assets/fu_red_idle.glb'),
   ]);
-  humanPool = makePool(blue);         // 手前・自軍
-  oppPool   = makePool(red);          // 奥・敵軍
-  const iconClone = THREE.SkeletonUtils.clone(blue.scene);
-  let im = null; blue.scene.traverse(o => { if (o.isSkinnedMesh) im = o; });
-  iconClone.traverse(o => { if (o.isSkinnedMesh) o.material = new THREE.MeshLambertMaterial({ map: im.material.map, skinning: true }); });
-  document.documentElement.style.setProperty('--sol-me', `url("${makeSoldierIconFromObject(iconClone)}")`);
+  const fuG = [fuBlue, fuRed];
+  // 駒種ごとに assets/{種類}_{blue|red}_idle.glb を試し、無ければ歩で代用する。
+  // 名前は駒種の内部名（BASE_NAME）そのまま。ファイルを足すだけで反映される。
+  const resolve = async (name, team) => {
+    if (name === 'fu') return fuG[team];
+    try { return await loadGLTF(`./assets/${name}_${team === 0 ? 'blue' : 'red'}_idle.glb`); }
+    catch { return fuG[team]; }                 // モデルが無い駒種は歩で代用
+  };
+  const blueG = {};
+  await Promise.all(BASE_NAME.map(async name => {
+    const [gb, gr] = await Promise.all([resolve(name, 0), resolve(name, 1)]);
+    humanPools[name] = makePool(gb, POOL_CAP[name]);   // 手前・自軍
+    oppPools[name]   = makePool(gr, POOL_CAP[name]);   // 奥・敵軍
+    blueG[name] = gb;
+  }));
+  // 持ち駒欄のアイコンも駒種ごと（玉は持ち駒にならないので除く）。順に生成する。
+  for (const name of BASE_NAME){ if (name !== 'gyoku') handIcons[name] = iconFromGltf(blueG[name]); }
+  document.documentElement.style.setProperty('--sol-me', handIcons.fu);   // 未指定時の保険
   PIECE_BASE = 1.0;                   // モデルは全高 0.70 で作成済
   skinned = true;
 } catch (eSkin) {
@@ -545,22 +577,27 @@ function layoutHighlights(){
 /* ═════════ 駒の配置（毎フレーム pos から作る。移動中の駒だけ上書き） ═════════ */
 const dummy = new THREE.Object3D();
 const shadowDummy = new THREE.Object3D();
-let humanActive = 0, oppActive = 0;   // 骨付き時：ミキサーを回す個体数
 
-/* 骨付き：陣営の個体を list の姿勢へ置く。余りは不可視にして描画から外す。 */
-function applyTeamSkinned(pool, list, setActive){
-  const n = Math.min(list.length, POOL);
-  for (let k = 0; k < POOL; k++){
-    const m = pool[k];
-    if (k < n){
-      const e = list[k], base = PIECE_BASE * SOL_STEPS[solStep] * scaleOf(e.type) * e.jitter;
-      m.root.position.set(e.x, e.y, e.z);
-      m.root.rotation.set(e.rx, e.ry, e.rz);
-      m.root.scale.set(base*e.mx, base*e.my, base*e.mz);
-      m.root.visible = true;
-    } else m.root.visible = false;
+/* 骨付き：各個体を駒種名のプールへ振り分けて姿勢を置く。余りは不可視にして描画から外す。
+   成り駒は baseOf で元の駒のプール（＝元の駒のモデル）に入る。 */
+function applyTeamSkinned(pools, list){
+  const idx = {};
+  for (const name of BASE_NAME) idx[name] = 0;
+  for (const e of list){
+    const name = BASE_NAME[baseOf(e.type)];
+    const pool = pools[name], k = idx[name]++;
+    if (k >= pool.length) continue;                 // 想定外の超過は描かない（POOL_CAP で防ぐ）
+    const m = pool[k], base = PIECE_BASE * SOL_STEPS[solStep] * scaleOf(e.type) * e.jitter;
+    m.root.position.set(e.x, e.y, e.z);
+    m.root.rotation.set(e.rx, e.ry, e.rz);
+    m.root.scale.set(base*e.mx, base*e.my, base*e.mz);
+    m.root.visible = true;
   }
-  setActive(n);
+  for (const name of BASE_NAME){
+    const pool = pools[name];
+    for (let k = idx[name]; k < pool.length; k++) pool[k].root.visible = false;
+    pool.active = idx[name];
+  }
 }
 /* 骨なし・箱：陣営を 1 つの InstancedMesh に詰める（従来どおり）。 */
 function writeTeamInstanced(mesh, list){
@@ -667,8 +704,8 @@ function layout(){
   addHandEntries(human, humanColor, true);          // 自分の持ち駒＝手前の地面
   addHandEntries(opp, 1 - humanColor, false);       // 敵の持ち駒＝奥の地面
   if (skinned){
-    applyTeamSkinned(humanPool, human, n => humanActive = n);
-    applyTeamSkinned(oppPool,   opp,  n => oppActive   = n);
+    applyTeamSkinned(humanPools, human);
+    applyTeamSkinned(oppPools,   opp);
   } else {
     writeTeamInstanced(instHuman, human);
     writeTeamInstanced(instOpp,   opp);
@@ -846,6 +883,7 @@ function renderHands(){
   for (const t of HAND_ORDER){
     const n = pos.hands[humanColor][t]; if (!n) continue; any = true;
     const e = document.createElement('div'); e.className = 'koma'; e.dataset.pt = t;
+    const ic = handIcons[BASE_NAME[t]]; if (ic) e.style.backgroundImage = ic;   // 駒種ごとのモデル
     const k = document.createElement('span'); k.className = 'k'; k.textContent = KANJI[t]; e.appendChild(k);
     if (selected && selected.kind==='hand' && selected.pt===t) e.classList.add('sel');
     if (n > 1){ const b = document.createElement('span'); b.className='n'; b.textContent=n; e.appendChild(b); }
@@ -1010,8 +1048,10 @@ let fpsAccum = 0, fpsFrames = 0;
 /* 待機モーションを進める。骨付きは各個体のミキサー、骨なし・箱は頂点揺れの時刻。 */
 function updateAnims(dt){
   if (skinned){
-    for (let i = 0; i < humanActive; i++) humanPool[i].mixer.update(dt);
-    for (let i = 0; i < oppActive;   i++) oppPool[i].mixer.update(dt);
+    for (const name of BASE_NAME){
+      const hp = humanPools[name]; for (let i = 0; i < hp.active; i++) hp[i].mixer.update(dt);
+      const op = oppPools[name];   for (let i = 0; i < op.active; i++) op[i].mixer.update(dt);
+    }
   } else {
     uTime.value = clock.getElapsedTime();
   }
