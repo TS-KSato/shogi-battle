@@ -42,6 +42,10 @@
   .myhand{display:flex;flex-wrap:wrap;gap:5px;align-items:center;min-height:31px;
     margin-bottom:9px;font-size:11px;color:var(--dim)}
   .myhand .lead{margin-right:2px}
+  .tilts{display:flex;gap:6px;align-items:center;margin-bottom:9px}
+  .tilts .lead{font-size:11px;color:var(--dim);margin-right:2px}
+  .tilts button{flex:1;padding:8px 4px}
+  .tilts button[aria-pressed="true"]{background:#2b2718;border-color:var(--hit);color:#f4e6ae}
   .controls{display:flex;flex-wrap:wrap;gap:6px}
   .grp{display:flex;gap:6px;flex:1;min-width:0}
   button,select{font:inherit;font-size:12px;color:var(--ink);background:#1a1b18;
@@ -69,6 +73,13 @@
   </div>
   <div id="panel">
     <div class="myhand" id="handBottom"></div>
+    <div class="tilts">
+      <span class="lead">俯角</span>
+      <button data-deg="35">35°</button>
+      <button data-deg="42">42°</button>
+      <button data-deg="50">50°</button>
+      <button data-deg="56" aria-pressed="true">56°</button>
+    </div>
     <div class="controls">
       <div class="grp">
         <select id="side" title="手番">
@@ -120,7 +131,7 @@ const HAND_ORDER = [HI, KA, KI, GI, KE, KY, FU];
 
 /* ═════════ 3D 定数（lab/idle-test.html を流用） ═════════ */
 const N = 9, SQ = 1.0, CHAR_H = 0.79, BASE = 0.70 / CHAR_H;
-const TILT = 56 * Math.PI / 180;   // 縦長画面で盤が上下いっぱいに映る俯角
+let TILT = 56 * Math.PI / 180;     // 俯角。既定56度。UIで切り替える
 const COLOR = [0x5f86cf, 0xd26355];            // 0=自軍(青・手前) 1=敵軍(赤・奥)
 /* 駒種ごとの大きさ。識別用ではなく、集団が単一コピーに見えるのを防ぐため。 */
 const SCALE = { fu:.82, kyo:.88, kei:.90, gin:.96, kin:1.00, kaku:1.03, hisha:1.06, gyoku:1.16 };
@@ -541,8 +552,8 @@ function resize(){
   // 盤は手前へ傾くので、いちばん近い手前端の筋がいちばん広く映る。その手前端の
   // 奥行き(dist − 手前へのはみ出し)で横幅を合わせないと両端の筋が画面外に切れる。
   const distW = halfW / Math.tan(hFov/2) + (N*SQ)/2 * Math.cos(TILT);
-  const halfD = (N*SQ)/2 * Math.cos(TILT) + 0.4;
-  const distD = halfD / Math.tan(vFov/2);
+  // 縦は「手前端が画面下に収まる」条件。手前端の y/depth = (N/2)sinθ/(dist−(N/2)cosθ)。
+  const distD = ((N*SQ)/2 + 0.3) * Math.sin(TILT) / Math.tan(vFov/2) + (N*SQ)/2 * Math.cos(TILT);
   const dist = Math.max(distW, distD);
   camera.position.set(TARGET.x, TARGET.y + dist*Math.sin(TILT), TARGET.z + dist*Math.cos(TILT));
   camera.lookAt(TARGET); camera.updateProjectionMatrix();
@@ -550,6 +561,17 @@ function resize(){
   scene.fog.near = dist - 4; scene.fog.far = dist + 14;
 }
 addEventListener('resize', () => { resize(); });
+
+// 俯角の切り替え。浅い俯角ほど望遠(狭い画角)にしてパースを弱め、手前の駒が奥を隠しにくくする。
+const TILT_FOV = { 35:28, 42:34, 50:40, 56:44 };
+const tiltBtns = [...document.querySelectorAll('.tilts button')];
+function setTilt(deg){
+  TILT = deg * Math.PI / 180;
+  camera.fov = TILT_FOV[deg];
+  tiltBtns.forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.deg === deg)));
+  resize();
+}
+tiltBtns.forEach(b => b.addEventListener('click', () => setTilt(+b.dataset.deg)));
 
 /* ═════════ 対局の状態（play.html と同じ枠組み） ═════════ */
 const $ = id => document.getElementById(id);
