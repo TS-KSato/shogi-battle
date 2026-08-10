@@ -194,9 +194,49 @@ function makeShadowTexture(){
   return new THREE.CanvasTexture(c);
 }
 
-/* 下部UIの自分の持ち駒アイコン。盤上と同じ bodyGeom を自軍色で一度だけ描いて
-   PNG 化する。以後は静止画像なので対局中の負荷はない。 */
-function makeSoldierIcon(hex){
+/* GLB を最小限に読む（骨なし・単一プリミティブ前提）。GLTFLoader を足さず、
+   同一オリジンの相対パスで取得する。失敗時は呼び出し側で箱の素体へ退避する。 */
+async function loadGLB(url){
+  const buf = await (await fetch(url)).arrayBuffer();
+  const dv = new DataView(buf);
+  if (dv.getUint32(0, true) !== 0x46546C67) throw new Error('not glb');
+  let json = null, binOff = 0, p = 12;
+  while (p < dv.byteLength){
+    const len = dv.getUint32(p, true), type = dv.getUint32(p+4, true); p += 8;
+    if (type === 0x4E4F534A) json = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, p, len)));
+    else if (type === 0x004E4942) binOff = p;
+    p += len;
+  }
+  const CT = { 5126: Float32Array, 5123: Uint16Array, 5125: Uint32Array };
+  const NUM = { SCALAR:1, VEC2:2, VEC3:3 };
+  const read = idx => {                            // アクセサをコピーで取り出す（整列に依存しない）
+    const a = json.accessors[idx], bv = json.bufferViews[a.bufferView];
+    const off = binOff + (bv.byteOffset||0) + (a.byteOffset||0);
+    const Ctor = CT[a.componentType];
+    return new Ctor(buf.slice(off, off + a.count * NUM[a.type] * Ctor.BYTES_PER_ELEMENT));
+  };
+  const prim = json.meshes[0].primitives[0], at = prim.attributes;
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.BufferAttribute(read(at.POSITION), 3));
+  geom.setAttribute('normal',   new THREE.BufferAttribute(read(at.NORMAL), 3));
+  geom.setAttribute('uv',       new THREE.BufferAttribute(read(at.TEXCOORD_0), 2));
+  geom.setIndex(new THREE.BufferAttribute(read(prim.indices), 1));
+  // aFlex: 足元0 → 頭頂へ。箱と同じく 高さ/CHAR_H。
+  const pos = geom.attributes.position.array, flex = new Float32Array(pos.length/3);
+  for (let i = 0; i < flex.length; i++) flex[i] = clamp01(pos[i*3+1] / CHAR_H);
+  geom.setAttribute('aFlex', new THREE.BufferAttribute(flex, 1));
+  // 埋め込みテクスチャ
+  const img = json.images[0], ibv = json.bufferViews[img.bufferView];
+  const bytes = new Uint8Array(buf, binOff + (ibv.byteOffset||0), ibv.byteLength);
+  const tex = new THREE.Texture(await createImageBitmap(new Blob([bytes], { type: img.mimeType })));
+  tex.flipY = false;                              // glTF は UV 左上原点
+  tex.needsUpdate = true;
+  return { geometry: geom, texture: tex };
+}
+
+/* 下部UIの自分の持ち駒アイコン。盤上と同じ形を一度だけ描いて PNG 化する。
+   以後は静止画像なので対局中の負荷はない。 */
+function makeSoldierIcon(geometry, matParams){
   const W = 128, H = 160;
   const r = new THREE.WebGLRenderer({ antialias:true, alpha:true, preserveDrawingBuffer:true });
   r.setPixelRatio(1); r.setSize(W, H, false); r.setClearColor(0x000000, 0);
@@ -204,15 +244,16 @@ function makeSoldierIcon(hex){
   sc.add(new THREE.HemisphereLight(0xbfd4e8, 0x2a2216, 0.7));
   const key = new THREE.DirectionalLight(0xfff1d6, 1.15); key.position.set(3, 5, 4); sc.add(key);
   const back = new THREE.DirectionalLight(0x8fa9d8, 0.4);  back.position.set(-4, 2, -3); sc.add(back);
-  sc.add(new THREE.Mesh(bodyGeom, new THREE.MeshLambertMaterial({ color: hex })));
+  sc.add(new THREE.Mesh(geometry, new THREE.MeshLambertMaterial(matParams)));
+  geometry.computeBoundingBox();
+  const bb = geometry.boundingBox, hh = bb.max.y - bb.min.y, cy = (bb.max.y + bb.min.y)/2;
   const cam = new THREE.PerspectiveCamera(30, W/H, 0.1, 10);
-  cam.position.set(0, CHAR_H*0.52, 2.15); cam.lookAt(0, CHAR_H*0.46, 0);   // 正面やや上から全身
+  cam.position.set(0, cy + hh*0.05, hh*3.05); cam.lookAt(0, cy - hh*0.04, 0);   // 正面やや上から全身
   r.render(sc, cam);
   const url = r.domElement.toDataURL('image/png');
-  r.dispose();                                   // bodyGeom は共有なので破棄しない
+  r.dispose();                                    // 形状は共有なので破棄しない
   return url;
 }
-document.documentElement.style.setProperty('--sol-me', `url("${makeSoldierIcon(COLOR[0])}")`);
 
 /* ═════════ 場面（idle-test を流用） ═════════ */
 const view = document.getElementById('view');
@@ -258,8 +299,8 @@ ground.rotation.x = -Math.PI/2; scene.add(ground);
 
 /* 待機の揺れ（骨なし・頂点シェーダ。idle-test と同じ式） */
 const uTime = { value: 0 }, uAmp = { value: 1 };
-function wobbleMaterial(color){
-  const m = new THREE.MeshLambertMaterial({ color });
+function wobbleMaterial(params){
+  const m = new THREE.MeshLambertMaterial(params);
   m.onBeforeCompile = sh => {
     sh.uniforms.uTime = uTime; sh.uniforms.uAmp = uAmp;
     sh.vertexShader = sh.vertexShader
@@ -282,24 +323,47 @@ function wobbleMaterial(color){
    片陣営が一度に持てるのは最大でも 39（相手玉が必ず盤に残る）。余裕を見て確保し、
    使わないスロットは縮尺0で隠す（capture-test と同じ隠し方）。 */
 const MAXI = 44;
+let PIECE_BASE = BASE;                         // 駒の基準倍率。モデル採用時は 1.0（全高0.70で作成済）
 const jitterBySq = new Float32Array(81);
 for (let i = 0; i < 81; i++) jitterBySq[i] = 0.97 + Math.random()*0.06;
 const jitterHand = new Float32Array(MAXI);
 for (let i = 0; i < MAXI; i++) jitterHand[i] = 0.97 + Math.random()*0.06;
 
-function makeTeamMesh(color){
-  const g = bodyGeom.clone();
+function makeTeamMesh(geom, material){
+  const g = geom.clone();
   const phase = new Float32Array(MAXI), speed = new Float32Array(MAXI);
   for (let k = 0; k < MAXI; k++){ phase[k] = Math.random()*Math.PI*2; speed[k] = 0.9 + Math.random()*0.25; }
   g.setAttribute('aPhase', new THREE.InstancedBufferAttribute(phase, 1));
   g.setAttribute('aSpeed', new THREE.InstancedBufferAttribute(speed, 1));
-  const mesh = new THREE.InstancedMesh(g, wobbleMaterial(color), MAXI);
+  const mesh = new THREE.InstancedMesh(g, material, MAXI);
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   mesh.frustumCulled = false; scene.add(mesh);
   return mesh;
 }
-const instHuman = makeTeamMesh(COLOR[0]);   // 手前・自軍
-const instOpp   = makeTeamMesh(COLOR[1]);   // 奥・敵軍
+
+// 兵のモデルを読み込む。自軍=fu_blue／敵軍=fu_red。読み込めなければ箱の素体へ退避。
+let instHuman, instOpp;
+{
+  let hg, og, hm, om, iconGeom, iconParams;
+  try {
+    const [blue, red] = await Promise.all([
+      loadGLB('./assets/fu_blue.glb'), loadGLB('./assets/fu_red.glb'),
+    ]);
+    hg = blue.geometry; og = red.geometry;
+    hm = wobbleMaterial({ map: blue.texture }); om = wobbleMaterial({ map: red.texture });
+    iconGeom = blue.geometry; iconParams = { map: blue.texture };
+    PIECE_BASE = 1.0;
+  } catch (err) {
+    hg = og = bodyGeom;                          // 箱の素体（全高 CHAR_H）に退避
+    hm = wobbleMaterial({ color: COLOR[0] }); om = wobbleMaterial({ color: COLOR[1] });
+    iconGeom = bodyGeom; iconParams = { color: COLOR[0] };
+    PIECE_BASE = BASE;
+    console.warn('GLB 読み込み失敗、箱の素体へ退避:', err && err.message);
+  }
+  instHuman = makeTeamMesh(hg, hm);   // 手前・自軍
+  instOpp   = makeTeamMesh(og, om);   // 奥・敵軍
+  document.documentElement.style.setProperty('--sol-me', `url("${makeSoldierIcon(iconGeom, iconParams)}")`);
+}
 
 const shadowTex = makeShadowTexture();
 function makeShadowMesh(){
@@ -371,7 +435,7 @@ const shadowDummy = new THREE.Object3D();
 function writeTeam(mesh, shadowMesh, list){
   for (let k = 0; k < MAXI; k++){
     if (k < list.length){
-      const e = list[k], base = BASE * scaleOf(e.type) * e.jitter;
+      const e = list[k], base = PIECE_BASE * scaleOf(e.type) * e.jitter;
       dummy.position.set(e.x, e.y, e.z);
       dummy.rotation.set(e.rx, e.ry, e.rz);
       dummy.scale.set(base*e.mx, base*e.my, base*e.mz);
