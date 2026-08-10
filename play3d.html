@@ -282,7 +282,9 @@ function makeSoldierIcon(geometry, matParams){
   sc.add(new THREE.HemisphereLight(0xbfd4e8, 0x2a2216, 0.7));
   const key = new THREE.DirectionalLight(0xfff1d6, 1.15); key.position.set(3, 5, 4); sc.add(key);
   const back = new THREE.DirectionalLight(0x8fa9d8, 0.4);  back.position.set(-4, 2, -3); sc.add(back);
-  sc.add(new THREE.Mesh(geometry, new THREE.MeshLambertMaterial(matParams)));
+  const mesh = new THREE.Mesh(geometry, new THREE.MeshLambertMaterial(matParams));
+  mesh.rotation.y = Math.PI;                       // 盤上の自軍と同じ向き（奥を向く）
+  sc.add(mesh);
   geometry.computeBoundingBox();
   const bb = geometry.boundingBox, hh = bb.max.y - bb.min.y, cy = (bb.max.y + bb.min.y)/2;
   const cam = new THREE.PerspectiveCamera(30, W/H, 0.1, 10);
@@ -422,6 +424,7 @@ function makeSoldierIconFromObject(obj){
   sc.add(new THREE.HemisphereLight(0xbfd4e8, 0x2a2216, 0.7));
   const key = new THREE.DirectionalLight(0xfff1d6, 1.15); key.position.set(3, 5, 4); sc.add(key);
   const back = new THREE.DirectionalLight(0x8fa9d8, 0.4);  back.position.set(-4, 2, -3); sc.add(back);
+  obj.rotation.y = Math.PI;                         // 盤上の自軍と同じ向き（奥を向く）
   sc.add(obj);
   const bb = new THREE.Box3().setFromObject(obj), hh = bb.max.y - bb.min.y, cy = (bb.max.y + bb.min.y)/2;
   const cam = new THREE.PerspectiveCamera(30, W/H, 0.1, 10);
@@ -593,7 +596,7 @@ function writeShadows(shadowMesh, list){
   shadowMesh.instanceMatrix.needsUpdate = true;
 }
 const teamOf = color => color === humanColor ? 0 : 1;   // 0=手前 1=奥
-const ryOf   = color => teamOf(color) === 1 ? Math.PI : 0;
+const ryOf   = color => teamOf(color) === 1 ? 0 : Math.PI;   // 両軍を向き合わせる（敵=奥から手前、自=手前から奥）
 
 function moverEntry(){
   const a = anim, w1 = worldOfSq(a.to), w0 = a.from >= 0 ? worldOfSq(a.from) : null;
@@ -637,7 +640,7 @@ function addHandEntries(list, color, near){
   let total = 0; for (const t of HAND_ORDER) total += hand[t];
   if (!total) return;
   const perRow = 10, dx = 0.8, dz = 0.85;
-  const ry = near ? 0 : Math.PI, zdir = near ? 1 : -1;
+  const ry = near ? Math.PI : 0, zdir = near ? 1 : -1;   // 盤上と同じ向き（自=奥向き、敵=手前向き）
   const z0 = near ? (N*SQ)/2 + 0.8 : -((N*SQ)/2 + 0.8);
   let i = 0;
   for (const t of HAND_ORDER){
