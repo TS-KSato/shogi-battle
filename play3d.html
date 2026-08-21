@@ -404,16 +404,30 @@ function loadGLTF(url){
     new THREE.GLTFLoader().load(url, res, undefined, rej);
   });
 }
-/* gltf を size 体ぶん複製する。テクスチャは 1 枚を共有し、材質もこのプールで 1 つ。
+/* 場面の光に合わせて材質を Lambert に置き換える。1つのモデルが複数のプリミティブを
+   持つ場合はプリミティブごとに材質が違うので、テクスチャと色を1つずつ引き継ぐ
+   （飛は本体がテクスチャ、銃身・木・金具は色のみの4マテリアル）。 */
+function lambertFrom(src){
+  const m = new THREE.MeshLambertMaterial({ skinning: true });
+  if (src.map) m.map = src.map;
+  if (src.color) m.color.copy(src.color);
+  return m;
+}
+/* gltf を size 体ぶん複製する。材質は元マテリアルごとに1つ作って全個体で共有する。
    骨（Object3D）とミキサー（駒種ごとの待機クリップ）だけ個体ごとに持つ。 */
 function makePool(gltf, size){
   const clip = gltf.animations[0];
-  let src = null; gltf.scene.traverse(o => { if (o.isSkinnedMesh) src = o; });
-  const mat = new THREE.MeshLambertMaterial({ map: src.material.map, skinning: true });
+  // 複製後のメッシュは元と同じマテリアルを指すので、それを鍵に共有の材質を引く。
+  const shared = new Map();
+  const matFor = src => {
+    let m = shared.get(src.uuid);
+    if (!m){ m = lambertFrom(src); shared.set(src.uuid, m); }
+    return m;
+  };
   const pool = []; pool.active = 0;
   for (let k = 0; k < size; k++){
     const root = THREE.SkeletonUtils.clone(gltf.scene);
-    root.traverse(o => { if (o.isSkinnedMesh){ o.material = mat; o.frustumCulled = false; } });
+    root.traverse(o => { if (o.isSkinnedMesh){ o.material = matFor(o.material); o.frustumCulled = false; } });
     root.visible = false; scene.add(root);
     const mixer = new THREE.AnimationMixer(root);
     const action = mixer.clipAction(clip); action.play();
@@ -426,8 +440,7 @@ function makePool(gltf, size){
 /* 骨付き gltf から持ち駒アイコンを1枚作る（自軍＝青。盤上と同じ奥向きで撮る）。 */
 function iconFromGltf(gltf){
   const clone = THREE.SkeletonUtils.clone(gltf.scene);
-  let src = null; gltf.scene.traverse(o => { if (o.isSkinnedMesh) src = o; });
-  clone.traverse(o => { if (o.isSkinnedMesh){ o.material = new THREE.MeshLambertMaterial({ map: src.material.map, skinning: true }); o.frustumCulled = false; } });
+  clone.traverse(o => { if (o.isSkinnedMesh){ o.material = lambertFrom(o.material); o.frustumCulled = false; } });
   return `url("${makeSoldierIconFromObject(clone)}")`;
 }
 /* 骨付きモデルからも持ち駒アイコンを作る。1 体を安置ポーズのまま正面から撮る。 */
@@ -438,13 +451,19 @@ function makeSoldierIconFromObject(obj){
   const key = new THREE.DirectionalLight(0xfff1d6, 1.15); key.position.set(3, 5, 4); sc.add(key);
   const back = new THREE.DirectionalLight(0x8fa9d8, 0.4);  back.position.set(-4, 2, -3); sc.add(back);
   obj.rotation.y = Math.PI;                         // 盤上の自軍と同じ向き（奥を向く）
-  let sm = null; obj.traverse(o => { if (o.isSkinnedMesh){ o.frustumCulled = false; if (!sm) sm = o; } });
-  sc.add(obj);
   // 骨付きは skin 変換で立つので、ノード変換込みの setFromObject では箱が潰れる（Armature が微小scale）。
   // 描画される大きさはジオメトリ本来のバウンディング（全高約0.70・足元原点）に一致するのでそれで構図を取る。
-  let hh, cy;
-  if (sm){ sm.geometry.computeBoundingBox(); const gb = sm.geometry.boundingBox; hh = gb.max.y - gb.min.y; cy = (gb.max.y + gb.min.y)/2; }
-  else { const bb = new THREE.Box3().setFromObject(obj); hh = bb.max.y - bb.min.y; cy = (bb.max.y + bb.min.y)/2; }
+  // 複数プリミティブのモデルは全プリミティブを合わせないと構図から外れる部位が出る。
+  let box = null;
+  obj.traverse(o => {
+    if (!o.isSkinnedMesh) return;
+    o.frustumCulled = false;
+    o.geometry.computeBoundingBox();
+    box = box ? box.union(o.geometry.boundingBox) : o.geometry.boundingBox.clone();
+  });
+  sc.add(obj);
+  if (!box) box = new THREE.Box3().setFromObject(obj);
+  const hh = box.max.y - box.min.y, cy = (box.max.y + box.min.y)/2;
   const cam = new THREE.PerspectiveCamera(30, W/H, 0.1, 10);
   cam.position.set(0, cy + hh*0.05, hh*3.05); cam.lookAt(0, cy - hh*0.04, 0);
   r.render(sc, cam);
