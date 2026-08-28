@@ -74,6 +74,11 @@
   .overlay.sheet .rowb button{padding:10px 4px;font-size:11px}
   .overlay.sheet .card p{margin-bottom:6px}
   .overlay.sheet .legend{font-size:10px;color:var(--dim);margin-bottom:12px}
+  /* 選んだ側は、その側が盤に出る色で縁取る。 */
+  #promoYes.pick{border-color:#b07bd8}
+  #promoNo.pick{border-color:#f0ece0}
+  #promoGo{width:100%;margin-top:8px;padding:10px}
+  #promoGo:disabled{opacity:.4;cursor:default}
 </style>
 </head>
 <body>
@@ -123,8 +128,9 @@
 
 <div class="overlay sheet" id="promoOv"><div class="card">
   <p>成りますか？</p>
-  <p class="legend">黄＝成ると行ける先／紫＝成らずでないと行けない先</p>
-  <div class="rowb"><button id="promoYes" class="primary">成る</button><button id="promoNo">成らず</button></div>
+  <p class="legend">押すと、その場合に行ける先が盤に出ます</p>
+  <div class="rowb"><button id="promoYes">成る</button><button id="promoNo">成らず</button></div>
+  <button id="promoGo" class="primary" disabled>この手で指す</button>
 </div></div>
 
 <div class="overlay" id="resultOv"><div class="card">
@@ -638,19 +644,20 @@ function layoutHighlights(){
   if (pos.kingSq[pos.turn] >= 0 && inCheck(pos)){ place(checkTile, pos.kingSq[pos.turn]); checkTile.visible=true; }
   const busy = over || thinking || anim;
   if (pendingPromo){
-    // 成った後に動ける先を出す。移動元から伸びる合法手はもう選び終わった情報なので出さない。
+    // 移動元から伸びる合法手はもう選び終わった情報なので出さない。
     const mv = pendingPromo[0];
     place(selTile, moveFrom(mv)); selTile.visible = true;
     place(toTile, moveTo(mv));    toTile.visible = true;
-    let di = 0, ri = 0;
-    const show = (reach, color) => {
+    // 押した側だけを、その側の色で出す。未選択のあいだは行ける先を出さない。
+    if (promoPick){
+      const reach = promoPick === 'yes' ? promoReach : promoReachNo;
+      const color = promoPick === 'yes' ? 0xb07bd8 : 0xf0ece0;
+      let di = 0, ri = 0;
       for (const [sq, occupied] of reach){
         const m = occupied ? ringPool[ri++] : discPool[di++];
         if (m){ place(m, sq); m.material.color.setHex(color); m.visible = true; }
       }
-    };
-    show(promoReach,   0xc9a227);   // 成ると行ける先
-    show(promoReachNo, 0xb07bd8);   // 成らずでしか行けない先
+    }
   } else if (!busy && pos.turn === humanColor && selected){
     if (selected.kind === 'board'){ place(selTile, selected.sq); selTile.visible=true; }
     let di = 0, ri = 0;
@@ -882,6 +889,7 @@ const npc = new Npc();
 let pos, humanColor, level;
 let legal = [], selected = null, targets = new Map();
 let lastMove = null, thinking = false, over = false, pendingPromo = null, promoReach = null, promoReachNo = null;
+let promoPick = null;                    // 'yes' | 'no' | null（未選択）
 let kifu = [];                           // 棋譜（表現層。直近10手を上部に表示）
 let anim = null;                         // {from,to,moverColor,cap,capColor,capType,kind,t,dur,resolve}
 let sceneDirty = true, hlDirty = true;
@@ -923,15 +931,22 @@ function afterMove(mv){
   }
   return { name: SHEET_NAME[typeOf(p.board[to])], reach };
 }
+/* 成り確認を閉じ、選択状態と決定ボタンを初期に戻す。開くときも一度ここを通す。 */
+function closePromo(){
+  pendingPromo = null; promoPick = null;
+  $('promoOv').classList.remove('on');
+  $('promoYes').classList.remove('pick'); $('promoNo').classList.remove('pick');
+  $('promoGo').disabled = true;
+  hlDirty = true;
+}
 function chooseTarget(to){
   const cand = targets.get(to);
   if (!cand || !cand.length) return;
   if (cand.length === 1){ humanPlay(cand[0]); return; }
+  closePromo();                                            // 前回の選択状態を残さない
   pendingPromo = cand;                                     // 成り／不成の確認
   const yes = afterMove(cand.find(m => movePro(m))), no = afterMove(cand.find(m => !movePro(m)));
-  // 成りは金型への置換で上位互換ではない。桂・銀・香は成らずでしか行けない先が残る。
-  promoReach = yes.reach;
-  promoReachNo = new Map([...no.reach].filter(([sq]) => !yes.reach.has(sq)));
+  promoReach = yes.reach; promoReachNo = no.reach;         // どちらも「その場合に行ける先の全部」
   $('promoYes').textContent = `成る　${yes.name}／行ける先 ${yes.reach.size}か所`;
   $('promoNo').textContent  = `成らず　${no.name}／行ける先 ${no.reach.size}か所`;
   $('promoOv').classList.add('on');
@@ -1132,20 +1147,26 @@ $('handBottom').addEventListener('click', e => {
   if (selected && selected.kind==='hand' && selected.pt===pt){ clearSelection(); hlDirty=true; renderStatus(); return; }
   selectHand(pt);
 });
-$('promoYes').addEventListener('click', () => {
-  $('promoOv').classList.remove('on');
-  const mv = pendingPromo.find(m => (m >> 14) & 1); pendingPromo = null; hlDirty = true;
-  if (mv !== undefined) humanPlay(mv);
-});
-$('promoNo').addEventListener('click', () => {
-  $('promoOv').classList.remove('on');
-  const mv = pendingPromo.find(m => !((m >> 14) & 1)); pendingPromo = null; hlDirty = true;
+// 押しても着手しない。選んだ側を盤に出して見比べ、決定ボタンで初めて指す。
+function pickPromo(which){
+  promoPick = which;
+  $('promoYes').classList.toggle('pick', which === 'yes');
+  $('promoNo').classList.toggle('pick', which === 'no');
+  $('promoGo').disabled = false;
+  hlDirty = true;
+}
+$('promoYes').addEventListener('click', () => pickPromo('yes'));
+$('promoNo').addEventListener('click', () => pickPromo('no'));
+$('promoGo').addEventListener('click', () => {
+  const want = promoPick === 'yes';
+  const mv = pendingPromo.find(m => !!movePro(m) === want);
+  closePromo();
   if (mv !== undefined) humanPlay(mv);
 });
 $('resultClose').addEventListener('click', () => $('resultOv').classList.remove('on'));
 $('resign').addEventListener('click', () => {
   if (over) return; over = true; thinking = false; hlDirty = true;
-  pendingPromo = null; $('promoOv').classList.remove('on');   // 成り確認の途中で投了しても盤の表示を残さない
+  closePromo();                                 // 成り確認の途中で投了しても盤の表示と選択を残さない
   showResult('あなたの負け', 'あなたの投了');
 });
 $('newGame').addEventListener('click', newGame);
@@ -1174,7 +1195,7 @@ function newGame(){
   legal = []; clearSelection(); lastMove = null;
   thinking = false; over = false; pendingPromo = null; anim = null;
   kifu = [];
-  $('resultOv').classList.remove('on'); $('promoOv').classList.remove('on');
+  $('resultOv').classList.remove('on'); closePromo();
   infoEl.textContent = '';
   npc.newGame();
   renderHands(); renderStatus(); renderKifu();
