@@ -72,6 +72,8 @@
   .overlay.sheet{background:none;align-items:flex-end;padding:0}
   .overlay.sheet .card{max-width:none;border-radius:6px 6px 0 0;padding:14px}
   .overlay.sheet .rowb button{padding:10px 4px;font-size:11px}
+  .overlay.sheet .card p{margin-bottom:6px}
+  .overlay.sheet .legend{font-size:10px;color:var(--dim);margin-bottom:12px}
 </style>
 </head>
 <body>
@@ -101,14 +103,26 @@
         <button class="ghost" id="reset" title="拡大を等倍に戻す">等倍</button>
       </div>
     </div>
+    <!-- 開発用の行。課題4（開発用表示の除去）でこの div ごと消す。 -->
     <div class="controls">
       <button class="ghost" id="solScale" title="兵の表示倍率を切り替え（比較用）">兵の大きさ ×1.30</button>
+      <select id="testPos" title="開発用のテスト局面">
+        <option value="">通常</option>
+        <option value="4k4/9/9/4P4/9/9/9/9/4K4 b - 1">歩が成る</option>
+        <option value="4k4/9/9/4L4/9/9/9/9/4K4 b - 1">香が成る</option>
+        <option value="4k4/9/9/9/4N4/9/9/9/4K4 b - 1">桂が成る</option>
+        <option value="4k4/9/9/4S4/9/9/9/9/4K4 b - 1">銀が成る</option>
+        <option value="4k4/9/9/9/2B6/9/9/9/4K4 b - 1">角が成る（馬）</option>
+        <option value="4k4/9/9/9/4R4/9/9/9/4K4 b - 1">飛が成る（龍）</option>
+        <option value="4k4/9/4P4/9/9/9/9/9/4K4 b - 1">歩が成って王手</option>
+      </select>
     </div>
   </div>
 </div>
 
 <div class="overlay sheet" id="promoOv"><div class="card">
   <p>成りますか？</p>
+  <p class="legend">黄＝成ると行ける先／紫＝成らずでないと行けない先</p>
   <div class="rowb"><button id="promoYes" class="primary">成る</button><button id="promoNo">成らず</button></div>
 </div></div>
 
@@ -128,7 +142,7 @@ import {
   doMove, moveToUsi, usiToMove,
   moveTo, moveFrom, movePro, isDrop, dropType,
   colorOf, typeOf, baseOf, col, row, inCheck,
-  BLACK, WHITE, EMPTY, FU, KY, KE, GI, KI, KA, HI,
+  BLACK, WHITE, EMPTY, FU, KY, KE, GI, KI, KA, HI, TO,
 } from './src/shogi.js';
 import { Npc } from './src/npc.js';
 
@@ -145,6 +159,10 @@ const KIFU_NAME = [];
 KIFU_NAME[0]='歩';KIFU_NAME[1]='香';KIFU_NAME[2]='桂';KIFU_NAME[3]='銀';KIFU_NAME[4]='金';
 KIFU_NAME[5]='角';KIFU_NAME[6]='飛';KIFU_NAME[7]='玉';
 KIFU_NAME[8]='と';KIFU_NAME[9]='成香';KIFU_NAME[10]='成桂';KIFU_NAME[11]='成銀';KIFU_NAME[13]='馬';KIFU_NAME[14]='龍';
+
+/* 成り確認シートに出す駒名。棋譜の「と」は初心者に通じないので「と金」を出す。
+   他5種は棋譜表記と一致する。表示名は後で全面的に差し替えるのでここ1か所に置く。 */
+const SHEET_NAME = KIFU_NAME.slice(); SHEET_NAME[TO] = 'と金';
 
 /* 指す直前の局面 p と指し手 mv から日本式の棋譜1行を作る（表現層の処理）。
    駒種・移動元・成りは、着手前の局面と指し手だけから取れる。 */
@@ -624,16 +642,21 @@ function layoutHighlights(){
     place(selTile, moveFrom(mv)); selTile.visible = true;
     place(toTile, moveTo(mv));    toTile.visible = true;
     let di = 0, ri = 0;
-    for (const [sq, occupied] of promoReach){
-      if (occupied){ const m = ringPool[ri++]; if (m){ place(m, sq); m.visible=true; } }
-      else { const m = discPool[di++]; if (m){ place(m, sq); m.visible=true; } }
-    }
+    const show = (reach, color) => {
+      for (const [sq, occupied] of reach){
+        const m = occupied ? ringPool[ri++] : discPool[di++];
+        if (m){ place(m, sq); m.material.color.setHex(color); m.visible = true; }
+      }
+    };
+    show(promoReach,   0xc9a227);   // 成ると行ける先
+    show(promoReachNo, 0xb07bd8);   // 成らずでしか行けない先
   } else if (!busy && pos.turn === humanColor && selected){
     if (selected.kind === 'board'){ place(selTile, selected.sq); selTile.visible=true; }
     let di = 0, ri = 0;
     for (const sq of targets.keys()){
-      if (pos.board[sq] !== EMPTY){ const m = ringPool[ri++]; if (m){ place(m, sq); m.visible=true; } }
-      else { const m = discPool[di++]; if (m){ place(m, sq); m.visible=true; } }
+      // 成り確認で塗った紫が残らないよう、こちらでも色を毎回指定する。
+      if (pos.board[sq] !== EMPTY){ const m = ringPool[ri++]; if (m){ place(m, sq); m.material.color.setHex(0xd8402a); m.visible=true; } }
+      else { const m = discPool[di++]; if (m){ place(m, sq); m.material.color.setHex(0xc9a227); m.visible=true; } }
     }
   }
 }
@@ -857,7 +880,7 @@ const turnEl = $('turn'), infoEl = $('info');
 const npc = new Npc();
 let pos, humanColor, level;
 let legal = [], selected = null, targets = new Map();
-let lastMove = null, thinking = false, over = false, pendingPromo = null, promoReach = null;
+let lastMove = null, thinking = false, over = false, pendingPromo = null, promoReach = null, promoReachNo = null;
 let kifu = [];                           // 棋譜（表現層。直近10手を上部に表示）
 let anim = null;                         // {from,to,moverColor,cap,capColor,capType,kind,t,dur,resolve}
 let sceneDirty = true, hlDirty = true;
@@ -891,12 +914,13 @@ function afterMove(mv){
   const p = clone(pos), to = moveTo(mv), mover = pos.turn;
   doMove(p, mv);
   p.turn = mover;
+  const foeKing = p.kingSq[1 - mover];   // 玉を取る手は対局に現れない。偽の行き先になるので除く
   const reach = new Map();
   for (const m of legalMoves(p)){
-    if (isDrop(m) || moveFrom(m) !== to) continue;
+    if (isDrop(m) || moveFrom(m) !== to || moveTo(m) === foeKing) continue;
     reach.set(moveTo(m), p.board[moveTo(m)] !== EMPTY);   // 成り違いで同じ先が2回来るのでMapで畳む
   }
-  return { name: KIFU_NAME[typeOf(p.board[to])], reach };
+  return { name: SHEET_NAME[typeOf(p.board[to])], reach };
 }
 function chooseTarget(to){
   const cand = targets.get(to);
@@ -904,7 +928,9 @@ function chooseTarget(to){
   if (cand.length === 1){ humanPlay(cand[0]); return; }
   pendingPromo = cand;                                     // 成り／不成の確認
   const yes = afterMove(cand.find(m => movePro(m))), no = afterMove(cand.find(m => !movePro(m)));
-  promoReach = yes.reach;                                  // 成らず側は成る側の部分集合なので盤には出さない
+  // 成りは金型への置換で上位互換ではない。桂・銀・香は成らずでしか行けない先が残る。
+  promoReach = yes.reach;
+  promoReachNo = new Map([...no.reach].filter(([sq]) => !yes.reach.has(sq)));
   $('promoYes').textContent = `成る　${yes.name}／行ける先 ${yes.reach.size}か所`;
   $('promoNo').textContent  = `成らず　${no.name}／行ける先 ${no.reach.size}か所`;
   $('promoOv').classList.add('on');
@@ -1122,6 +1148,8 @@ $('resign').addEventListener('click', () => {
   showResult('あなたの負け', 'あなたの投了');
 });
 $('newGame').addEventListener('click', newGame);
+// 成りの場面はNPCが勝ちに来るため対局中に作れない。開発用に局面を直接読み込む。
+$('testPos').addEventListener('change', () => { $('side').value = '0'; newGame(); });
 $('reset').addEventListener('click', () => { zoom = 1; panX = 0; panY = 0; applyView(); });
 $('solScale').addEventListener('click', () => {
   solStep = (solStep + 1) % SOL_STEPS.length;
@@ -1135,8 +1163,12 @@ function newGame(){
   level = $('level').value;
   flip = (humanColor === WHITE);
   let sfen = START_SFEN;
-  try { const q = new URLSearchParams(location.search).get('sfen'); if (q){ parseSfen(q); sfen = q; } }
-  catch { sfen = START_SFEN; }
+  const test = $('testPos').value;                  // 開発用のテスト局面。?sfen= と同じ扱い
+  try {
+    const q = new URLSearchParams(location.search).get('sfen');
+    if (test){ parseSfen(test); sfen = test; }
+    else if (q){ parseSfen(q); sfen = q; }
+  } catch { sfen = START_SFEN; }
   pos = parseSfen(sfen);
   legal = []; clearSelection(); lastMove = null;
   thinking = false; over = false; pendingPromo = null; anim = null;
