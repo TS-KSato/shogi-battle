@@ -68,6 +68,10 @@
   .card p{margin:0 0 14px;font-size:13px}
   .card .big{font-size:16px;color:var(--hit);letter-spacing:.06em;margin-bottom:6px}
   .rowb{display:flex;gap:8px}.rowb button{flex:1}
+  /* 成り確認だけは下部シート。成るとどう変わるかを盤で見て選べるよう、盤は覆わず暗くしない。 */
+  .overlay.sheet{background:none;align-items:flex-end;padding:0}
+  .overlay.sheet .card{max-width:none;border-radius:6px 6px 0 0;padding:14px}
+  .overlay.sheet .rowb button{padding:10px 4px;font-size:11px}
 </style>
 </head>
 <body>
@@ -103,7 +107,7 @@
   </div>
 </div>
 
-<div class="overlay" id="promoOv"><div class="card">
+<div class="overlay sheet" id="promoOv"><div class="card">
   <p>成りますか？</p>
   <div class="rowb"><button id="promoYes" class="primary">成る</button><button id="promoNo">成らず</button></div>
 </div></div>
@@ -120,7 +124,7 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 <script type="module">
 import {
-  START_SFEN, parseSfen, toSfen, legalMoves,
+  START_SFEN, parseSfen, toSfen, legalMoves, clone,
   doMove, moveToUsi, usiToMove,
   moveTo, moveFrom, movePro, isDrop, dropType,
   colorOf, typeOf, baseOf, col, row, inCheck,
@@ -594,6 +598,7 @@ function disc(geom, color, y){
 const selTile   = tile(0xc9a227, 0.44, 0.92, 0.012);
 const checkTile = tile(0xe0653f, 0.50, 0.92, 0.012);
 const lastTiles = [tile(0xffffff, 0.34, 0.92, 0.011), tile(0xffffff, 0.34, 0.92, 0.011)];  // 色は指した側の陣営色に差し替える
+const toTile    = tile(0x6fd8c8, 0.50, 0.92, 0.012);   // 成り確認中の移動先。選択中の黄と区別する
 const discGeom  = new THREE.CircleGeometry(0.16, 20);
 const ringGeom  = new THREE.RingGeometry(0.30, 0.44, 22);
 const discPool  = Array.from({length:81}, () => disc(discGeom, 0xc9a227, 0.014));
@@ -603,6 +608,7 @@ function place(mesh, sq){ const w = worldOfSq(sq); mesh.position.set(w.x, mesh.u
 function layoutHighlights(){
   discPool.forEach(m => m.visible=false); ringPool.forEach(m => m.visible=false);
   lastTiles.forEach(m => m.visible=false); selTile.visible=false; checkTile.visible=false;
+  toTile.visible = false;
   if (lastMove){
     // 直前の手は「指した側の陣営色」。選択中・合法手の黄色と区別して「起きたこと」を示す。
     const c = teamOf(lastMove.color) === 0 ? COLOR[0] : COLOR[1];
@@ -612,7 +618,17 @@ function layoutHighlights(){
   }
   if (pos.kingSq[pos.turn] >= 0 && inCheck(pos)){ place(checkTile, pos.kingSq[pos.turn]); checkTile.visible=true; }
   const busy = over || thinking || anim;
-  if (!busy && pos.turn === humanColor && selected){
+  if (pendingPromo){
+    // 成った後に動ける先を出す。移動元から伸びる合法手はもう選び終わった情報なので出さない。
+    const mv = pendingPromo[0];
+    place(selTile, moveFrom(mv)); selTile.visible = true;
+    place(toTile, moveTo(mv));    toTile.visible = true;
+    let di = 0, ri = 0;
+    for (const [sq, occupied] of promoReach){
+      if (occupied){ const m = ringPool[ri++]; if (m){ place(m, sq); m.visible=true; } }
+      else { const m = discPool[di++]; if (m){ place(m, sq); m.visible=true; } }
+    }
+  } else if (!busy && pos.turn === humanColor && selected){
     if (selected.kind === 'board'){ place(selTile, selected.sq); selTile.visible=true; }
     let di = 0, ri = 0;
     for (const sq of targets.keys()){
@@ -841,7 +857,7 @@ const turnEl = $('turn'), infoEl = $('info');
 const npc = new Npc();
 let pos, humanColor, level;
 let legal = [], selected = null, targets = new Map();
-let lastMove = null, thinking = false, over = false, pendingPromo = null;
+let lastMove = null, thinking = false, over = false, pendingPromo = null, promoReach = null;
 let kifu = [];                           // 棋譜（表現層。直近10手を上部に表示）
 let anim = null;                         // {from,to,moverColor,cap,capColor,capType,kind,t,dur,resolve}
 let sceneDirty = true, hlDirty = true;
@@ -869,11 +885,30 @@ function selectHand(pt){
   collectTargets(mv => isDrop(mv) && dropType(mv) === pt);
   hlDirty = true; renderStatus();
 }
+/* その手を指した後、動かした駒が次に行ける先（表示用。ルール層は変えない）。
+   着手を適用した局面で手番を指した側へ戻し、移動先から動く手だけを集める。 */
+function afterMove(mv){
+  const p = clone(pos), to = moveTo(mv), mover = pos.turn;
+  doMove(p, mv);
+  p.turn = mover;
+  const reach = new Map();
+  for (const m of legalMoves(p)){
+    if (isDrop(m) || moveFrom(m) !== to) continue;
+    reach.set(moveTo(m), p.board[moveTo(m)] !== EMPTY);   // 成り違いで同じ先が2回来るのでMapで畳む
+  }
+  return { name: KIFU_NAME[typeOf(p.board[to])], reach };
+}
 function chooseTarget(to){
   const cand = targets.get(to);
   if (!cand || !cand.length) return;
   if (cand.length === 1){ humanPlay(cand[0]); return; }
-  pendingPromo = cand; $('promoOv').classList.add('on');   // 成り／不成の確認
+  pendingPromo = cand;                                     // 成り／不成の確認
+  const yes = afterMove(cand.find(m => movePro(m))), no = afterMove(cand.find(m => !movePro(m)));
+  promoReach = yes.reach;                                  // 成らず側は成る側の部分集合なので盤には出さない
+  $('promoYes').textContent = `成る　${yes.name}／行ける先 ${yes.reach.size}か所`;
+  $('promoNo').textContent  = `成らず　${no.name}／行ける先 ${no.reach.size}か所`;
+  $('promoOv').classList.add('on');
+  hlDirty = true;
 }
 
 /* ─ 着手（ルール層で確定 → 3D で再生） ─ */
@@ -1072,17 +1107,18 @@ $('handBottom').addEventListener('click', e => {
 });
 $('promoYes').addEventListener('click', () => {
   $('promoOv').classList.remove('on');
-  const mv = pendingPromo.find(m => (m >> 14) & 1); pendingPromo = null;
+  const mv = pendingPromo.find(m => (m >> 14) & 1); pendingPromo = null; hlDirty = true;
   if (mv !== undefined) humanPlay(mv);
 });
 $('promoNo').addEventListener('click', () => {
   $('promoOv').classList.remove('on');
-  const mv = pendingPromo.find(m => !((m >> 14) & 1)); pendingPromo = null;
+  const mv = pendingPromo.find(m => !((m >> 14) & 1)); pendingPromo = null; hlDirty = true;
   if (mv !== undefined) humanPlay(mv);
 });
 $('resultClose').addEventListener('click', () => $('resultOv').classList.remove('on'));
 $('resign').addEventListener('click', () => {
   if (over) return; over = true; thinking = false; hlDirty = true;
+  pendingPromo = null; $('promoOv').classList.remove('on');   // 成り確認の途中で投了しても盤の表示を残さない
   showResult('あなたの負け', 'あなたの投了');
 });
 $('newGame').addEventListener('click', newGame);
