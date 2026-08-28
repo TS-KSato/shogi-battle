@@ -407,23 +407,26 @@ function loadGLTF(url){
 /* 場面の光に合わせて材質を Lambert に置き換える。1つのモデルが複数のプリミティブを
    持つ場合はプリミティブごとに材質が違うので、テクスチャと色を1つずつ引き継ぐ
    （飛は本体がテクスチャ、銃身・木・金具は色のみの4マテリアル）。 */
-function lambertFrom(src){
-  const m = new THREE.MeshLambertMaterial({ skinning: true });
+function lambertFrom(src, skinning){
+  const m = new THREE.MeshLambertMaterial({ skinning });
   if (src.map) m.map = src.map;
   if (src.color) m.color.copy(src.color);
   return m;
+}
+/* 複製した各メッシュは元と同じマテリアルを指すので、それを鍵に材質を1つずつ共有する。 */
+function sharedLambert(skinning){
+  const shared = new Map();
+  return src => {
+    let m = shared.get(src.uuid);
+    if (!m){ m = lambertFrom(src, skinning); shared.set(src.uuid, m); }
+    return m;
+  };
 }
 /* gltf を size 体ぶん複製する。材質は元マテリアルごとに1つ作って全個体で共有する。
    骨（Object3D）とミキサー（駒種ごとの待機クリップ）だけ個体ごとに持つ。 */
 function makePool(gltf, size){
   const clip = gltf.animations[0];
-  // 複製後のメッシュは元と同じマテリアルを指すので、それを鍵に共有の材質を引く。
-  const shared = new Map();
-  const matFor = src => {
-    let m = shared.get(src.uuid);
-    if (!m){ m = lambertFrom(src); shared.set(src.uuid, m); }
-    return m;
-  };
+  const matFor = sharedLambert(true);
   const pool = []; pool.active = 0;
   for (let k = 0; k < size; k++){
     const root = THREE.SkeletonUtils.clone(gltf.scene);
@@ -440,7 +443,7 @@ function makePool(gltf, size){
 /* 骨付き gltf から持ち駒アイコンを1枚作る（自軍＝青。盤上と同じ奥向きで撮る）。 */
 function iconFromGltf(gltf){
   const clone = THREE.SkeletonUtils.clone(gltf.scene);
-  clone.traverse(o => { if (o.isSkinnedMesh){ o.material = lambertFrom(o.material); o.frustumCulled = false; } });
+  clone.traverse(o => { if (o.isSkinnedMesh){ o.material = lambertFrom(o.material, true); o.frustumCulled = false; } });
   return `url("${makeSoldierIconFromObject(clone)}")`;
 }
 /* 骨付きモデルからも持ち駒アイコンを作る。1 体を安置ポーズのまま正面から撮る。 */
@@ -524,6 +527,32 @@ try {
   instHuman = makeTeamMesh(hg, hm);   // 手前・自軍
   instOpp   = makeTeamMesh(og, om);   // 奥・敵軍
   document.documentElement.style.setProperty('--sol-me', `url("${makeSoldierIcon(iconGeom, iconParams)}")`);
+}
+
+/* ── 金の幟 ──────────────────────────────────────────────
+   骨もアニメも無い静的メッシュ。盤上の金にだけ、駒とは別に1本立てる。
+   両軍とも画面の同じ側・同じ向きに見せたいので、駒の回転（敵は180度）には追随させず、
+   ワールド固定のずらし量と向きのまま置く。 */
+const NOBORI_MAX = 4;                    // 金は全部で4枚。片陣営が盤上に持てるのもその数まで
+const NOBORI_SIDE = 0.20 * 0.7026;       // 横へのずらし（駒の全高に対する比）
+const NOBORI_BACK = 0.05 * 0.7026;       // 駒の背面側（自軍の背＝手前）へのずらし
+const noboriPool = [[], []];             // 0=自軍 1=敵軍
+try {
+  const nobori = await Promise.all([
+    loadGLTF('./assets/nobori_blue.glb'), loadGLTF('./assets/nobori_red.glb'),
+  ]);
+  nobori.forEach((g, team) => {
+    const matFor = sharedLambert(false);
+    for (let k = 0; k < NOBORI_MAX; k++){
+      const root = g.scene.clone(true);
+      // 旗は厚みのない一枚板で、裏を向いていると片面描画では消える。布は両面で見せる。
+      root.traverse(o => { if (o.isMesh){ o.material = matFor(o.material); o.material.side = THREE.DoubleSide; } });
+      root.visible = false; scene.add(root);
+      noboriPool[team].push(root);
+    }
+  });
+} catch (err) {
+  console.warn('幟の読み込みに失敗、幟なしで続行:', err && err.message);
 }
 
 const shadowTex = makeShadowTexture();
@@ -634,6 +663,24 @@ function writeTeamInstanced(mesh, list){
   }
   mesh.instanceMatrix.needsUpdate = true;
 }
+/* 幟を金のいるマスへ置く。向きは触らない（ワールド固定＝画面基準で両軍そろう）。
+   駒の大きさ倍率はずらし量にも掛け、駒との位置関係を倍率によらず保つ。 */
+function writeBanners(list){
+  const base = PIECE_BASE * SOL_STEPS[solStep];
+  const idx = [0, 0];
+  for (const b of list){
+    const pool = noboriPool[b.team], k = idx[b.team]++;
+    if (k >= pool.length) continue;
+    const o = pool[k];
+    o.position.set(b.x + NOBORI_SIDE*base, 0, b.z + NOBORI_BACK*base);
+    o.scale.setScalar(base);
+    o.visible = true;
+  }
+  for (let t = 0; t < 2; t++){
+    const pool = noboriPool[t];
+    for (let k = idx[t]; k < pool.length; k++) pool[k].visible = false;
+  }
+}
 /* 足元の影は骨付き・骨なしとも同じ InstancedMesh。跳ねるほど縮めて接地感を残す。 */
 function writeShadows(shadowMesh, list){
   for (let k = 0; k < MAXI; k++){
@@ -710,15 +757,21 @@ function addHandEntries(list, color, near){
 }
 
 function layout(){
-  const human = [], opp = [];
+  const human = [], opp = [], banners = [];
   const listFor = c => teamOf(c) === 0 ? human : opp;
   for (let sq = 0; sq < 81; sq++){
     const p = pos.board[sq]; if (p === EMPTY) continue;
-    if (anim && sq === anim.to){ listFor(anim.moverColor).push(moverEntry()); continue; }
+    if (anim && sq === anim.to){
+      const e = moverEntry(); listFor(anim.moverColor).push(e);
+      if (e.type === KI) banners.push({ x:e.x, z:e.z, team: teamOf(anim.moverColor) });
+      continue;
+    }
     const w = worldOfSq(sq);
     listFor(colorOf(p)).push({ x:w.x, y:0, z:w.z, rx:0, ry:ryOf(colorOf(p)), rz:0,
       type: typeOf(p), jitter: jitterBySq[sq], mx:1, my:1, mz:1 });
+    if (typeOf(p) === KI) banners.push({ x:w.x, z:w.z, team: teamOf(colorOf(p)) });
   }
+  // 取られた駒は盤から消えているので幟も出ない（つぶれる演出には参加しない）。
   if (anim && anim.cap) listFor(anim.capColor).push(victimEntry());
   addHandEntries(human, humanColor, true);          // 自分の持ち駒＝手前の地面
   addHandEntries(opp, 1 - humanColor, false);       // 敵の持ち駒＝奥の地面
@@ -731,6 +784,7 @@ function layout(){
   }
   writeShadows(shadowHuman, human);
   writeShadows(shadowOpp,   opp);
+  writeBanners(banners);
 }
 
 /* ═════════ 拡大・視点移動（俯角35度・回転なしのまま、投影行列だけで拡大／移動）═════════
