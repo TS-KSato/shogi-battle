@@ -26,14 +26,12 @@
   #kifu{position:absolute;top:30px;left:12px;pointer-events:none;white-space:pre;
     font:11px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
     color:rgba(24,20,12,.5)}
-  /* 開発用。40体のスキンメッシュが実機で何フレーム出るかを測るための表示。 */
-  #fps{position:absolute;left:12px;bottom:8px;pointer-events:none;
-    font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums}
 
   /* 下部の自分の持ち駒。盤上と同じ兵の姿に、足元へ小さく漢字を添える。
      敵の持ち駒は 3D 空間（奥の地面）に出すので、上部の帯は置かない。 */
-  .koma{position:relative;width:30px;height:40px;cursor:pointer;
-    background-image:var(--sol-me);background-size:auto 76%;
+  /* 兵の絵の大きさは変えず、指で押せるよう当たりを44px角に広げる。 */
+  .koma{position:relative;width:44px;height:44px;cursor:pointer;
+    background-image:var(--sol-me);background-size:auto 30px;
     background-repeat:no-repeat;background-position:center top}
   .koma .k{position:absolute;left:50%;bottom:0;transform:translateX(-50%);
     font-size:10px;font-weight:700;line-height:1.25;padding:0 2px;border-radius:2px;
@@ -45,16 +43,18 @@
   .koma.sel{outline:2px solid var(--hit);outline-offset:2px;border-radius:3px}
   #handBottom .empty{color:var(--dim);font-size:11px;padding:0 6px}
 
-  #panel{border-top:1px solid var(--line);background:var(--panel);padding:9px 10px 12px}
+  /* viewport-fit=cover なので、左右と下は safe-area のぶん逃がす。 */
+  #panel{border-top:1px solid var(--line);background:var(--panel);
+    padding:9px calc(10px + env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom))
+            calc(10px + env(safe-area-inset-left))}
   .myhand{display:flex;flex-wrap:wrap;gap:5px;align-items:center;min-height:31px;
     margin-bottom:9px;font-size:11px;color:var(--dim)}
   .myhand .lead{margin-right:2px}
   .controls{display:flex;flex-wrap:wrap;gap:6px}
-  .controls + .controls{margin-top:7px}
   .grp{display:flex;gap:6px;flex:1;min-width:0}
   button,select{font:inherit;font-size:12px;color:var(--ink);background:#1a1b18;
     border:1px solid var(--line);border-radius:3px;padding:8px 6px;cursor:pointer;
-    -webkit-tap-highlight-color:transparent}
+    min-height:44px;-webkit-tap-highlight-color:transparent}
   select{flex:1;min-width:0}
   button.primary{background:#2b2718;border-color:var(--hit);color:#f4e6ae;flex:1}
   button.ghost{flex:1}
@@ -86,7 +86,6 @@
   <div id="view">
     <div id="status"><span id="turn">読み込み中…</span><span id="info"></span></div>
     <div id="kifu"></div>
-    <div id="fps"></div>
   </div>
   <div id="panel">
     <div class="myhand" id="handBottom"></div>
@@ -107,27 +106,6 @@
         <button class="ghost" id="resign">投了</button>
         <button class="ghost" id="reset" title="拡大を等倍に戻す">等倍</button>
       </div>
-    </div>
-    <!-- 開発用の行。課題4（開発用表示の除去）でこの div ごと消す。 -->
-    <div class="controls">
-      <button class="ghost" id="solScale" title="兵の表示倍率を切り替え（比較用）">兵の大きさ ×1.30</button>
-      <select id="testPos" title="開発用のテスト局面">
-        <option value="">通常</option>
-        <option value="4k4/9/9/4P4/9/9/9/9/4K4 b - 1">歩が成る</option>
-        <option value="4k4/9/9/4L4/9/9/9/9/4K4 b - 1">香が成る</option>
-        <option value="4k4/9/9/9/4N4/9/9/9/4K4 b - 1">桂が成る</option>
-        <option value="4k4/9/9/4S4/9/9/9/9/4K4 b - 1">銀が成る</option>
-        <option value="4k4/5p3/9/3pS4/9/9/9/9/4K4 b - 1">銀が成る（駒あり）</option>
-        <option value="4k4/9/9/9/2B6/9/9/9/4K4 b - 1">角が成る（馬）</option>
-        <option value="4k4/9/9/9/4R4/9/9/9/4K4 b - 1">飛が成る（龍）</option>
-        <option value="4k4/9/4P4/9/9/9/9/9/4K4 b - 1">歩が成って王手</option>
-        <option value="4k4/3g1g3/2+N+P+P1+S2/5+P3/9/9/3+l+p+p3/3G1G3/4K4 b - 1">幟が多い</option>
-        <option value="4k4/9/9/9/9/3p1p3/3B1+B3/9/4K4 b - 1">馬と角（青）</option>
-        <option value="4k4/9/3b1+b3/3P1P3/9/9/9/9/4K4 b - 1">馬と角（赤）</option>
-        <option value="4k4/9/9/9/9/3p1p3/3R1+R3/9/4K4 b - 1">龍と飛（青）</option>
-        <option value="4k4/9/3r1+r3/3P1P3/9/9/9/9/4K4 b - 1">龍と飛（赤）</option>
-        <option value="4k4/9/9/9/9/9/2G1+R1G2/9/4K4 b - 1">龍と金が隣</option>
-      </select>
     </div>
   </div>
 </div>
@@ -407,9 +385,8 @@ function wobbleMaterial(params){
 const MAXI = 44;
 let PIECE_BASE = BASE;                         // 駒の基準倍率。モデル採用時は 1.0（全高0.70で作成済）
 /* 兵の表示倍率。足元を原点に一様拡大するので、上へ伸びるだけで足元は動かない。
-   実機で見比べて決めるための仮の切り替え（既定 ×1.3 で全高0.70相当→0.90相当）。 */
-const SOL_STEPS = [1.0, 1.15, 1.3, 1.5];
-let solStep = 2;
+   実機で見比べて 1.30 に決めた（全高0.70相当→0.90相当）。 */
+const SOL_SCALE = 1.3;
 const jitterBySq = new Float32Array(81);
 for (let i = 0; i < 81; i++) jitterBySq[i] = 0.97 + Math.random()*0.06;
 const jitterHand = new Float32Array(MAXI);
@@ -722,7 +699,7 @@ function applyTeamSkinned(pools, list){
     const name = poolNameOf(e.type);
     const pool = pools[name], k = idx[name]++;
     if (k >= pool.length) continue;                 // 想定外の超過は描かない（POOL_CAP で防ぐ）
-    const m = pool[k], base = PIECE_BASE * SOL_STEPS[solStep] * scaleOf(e.type) * e.jitter;
+    const m = pool[k], base = PIECE_BASE * SOL_SCALE * scaleOf(e.type) * e.jitter;
     m.root.position.set(e.x, e.y, e.z);
     m.root.rotation.set(e.rx, e.ry, e.rz);
     m.root.scale.set(base*e.mx, base*e.my, base*e.mz);
@@ -738,7 +715,7 @@ function applyTeamSkinned(pools, list){
 function writeTeamInstanced(mesh, list){
   for (let k = 0; k < MAXI; k++){
     if (k < list.length){
-      const e = list[k], base = PIECE_BASE * SOL_STEPS[solStep] * scaleOf(e.type) * e.jitter;
+      const e = list[k], base = PIECE_BASE * SOL_SCALE * scaleOf(e.type) * e.jitter;
       dummy.position.set(e.x, e.y, e.z);
       dummy.rotation.set(e.rx, e.ry, e.rz);
       dummy.scale.set(base*e.mx, base*e.my, base*e.mz);
@@ -753,7 +730,7 @@ function writeTeamInstanced(mesh, list){
 /* 幟を該当駒のいるマスへ置く。向きは触らない（ワールド固定＝画面基準で両軍そろう）。
    駒の大きさ倍率はずらし量にも掛け、駒との位置関係を倍率によらず保つ。 */
 function writeBanners(list){
-  const base = PIECE_BASE * SOL_STEPS[solStep];
+  const base = PIECE_BASE * SOL_SCALE;
   const idx = [0, 0];
   for (const b of list){
     const pool = noboriPool[b.team], k = idx[b.team]++;
@@ -770,7 +747,7 @@ function writeBanners(list){
 }
 /* 大砲を龍のいるマスへ置く。幟と同じくワールド固定で、駒の回転には追随させない。 */
 function writeCannons(list){
-  const base = PIECE_BASE * SOL_STEPS[solStep];
+  const base = PIECE_BASE * SOL_SCALE;
   let n = 0;
   for (const c of list){
     const k = n++;
@@ -786,7 +763,7 @@ function writeCannons(list){
 function writeShadows(shadowMesh, list){
   for (let k = 0; k < MAXI; k++){
     if (k < list.length){
-      const e = list[k], base = PIECE_BASE * SOL_STEPS[solStep] * scaleOf(e.type) * e.jitter;
+      const e = list[k], base = PIECE_BASE * SOL_SCALE * scaleOf(e.type) * e.jitter;
       const grip = 1 - clamp01(e.y * 1.4) * 0.7;
       shadowDummy.position.set(e.x, 0.006, e.z);
       shadowDummy.rotation.set(-Math.PI/2, 0, 0);
@@ -1227,14 +1204,7 @@ $('resign').addEventListener('click', () => {
   showResult('あなたの負け', 'あなたの投了');
 });
 $('newGame').addEventListener('click', newGame);
-// 成りの場面はNPCが勝ちに来るため対局中に作れない。開発用に局面を直接読み込む。
-$('testPos').addEventListener('change', () => { $('side').value = '0'; newGame(); });
 $('reset').addEventListener('click', () => { zoom = 1; panX = 0; panY = 0; applyView(); });
-$('solScale').addEventListener('click', () => {
-  solStep = (solStep + 1) % SOL_STEPS.length;
-  $('solScale').textContent = `兵の大きさ ×${SOL_STEPS[solStep].toFixed(2)}`;
-  sceneDirty = true;                     // 倍率を変えたら足元を保ったまま再配置
-});
 
 /* ═════════ 新規対局 ═════════ */
 function newGame(){
@@ -1242,12 +1212,8 @@ function newGame(){
   level = $('level').value;
   flip = (humanColor === WHITE);
   let sfen = START_SFEN;
-  const test = $('testPos').value;                  // 開発用のテスト局面。?sfen= と同じ扱い
-  try {
-    const q = new URLSearchParams(location.search).get('sfen');
-    if (test){ parseSfen(test); sfen = test; }
-    else if (q){ parseSfen(q); sfen = q; }
-  } catch { sfen = START_SFEN; }
+  try { const q = new URLSearchParams(location.search).get('sfen'); if (q){ parseSfen(q); sfen = q; } }
+  catch { sfen = START_SFEN; }
   pos = parseSfen(sfen);
   legal = []; clearSelection(); lastMove = null;
   thinking = false; over = false; pendingPromo = null; anim = null;
@@ -1263,8 +1229,6 @@ function newGame(){
 
 /* ═════════ ループ ═════════ */
 const clock = new THREE.Clock();
-const fpsEl = $('fps');
-let fpsAccum = 0, fpsFrames = 0;
 /* 待機モーションを進める。骨付きは各個体のミキサー、骨なし・箱は頂点揺れの時刻。 */
 function updateAnims(dt){
   if (skinned){
@@ -1278,8 +1242,7 @@ function updateAnims(dt){
 }
 function loop(){
   requestAnimationFrame(loop);
-  const raw = clock.getDelta();
-  const dt = Math.min(raw, 0.05);
+  const dt = Math.min(clock.getDelta(), 0.05);
   updateAnims(dt);
   if (anim){
     anim.t += dt / anim.dur; sceneDirty = true;
@@ -1288,9 +1251,6 @@ function loop(){
   if (sceneDirty){ layout(); sceneDirty = false; }
   if (hlDirty){ layoutHighlights(); hlDirty = false; }
   renderer.render(scene, camera);
-  // 実測用の fps（クランプ前の生 dt で計り、重い端末ほど正しく低く出す）。
-  fpsAccum += raw; fpsFrames++;
-  if (fpsAccum >= 0.5){ fpsEl.textContent = Math.round(fpsFrames / fpsAccum) + ' fps'; fpsAccum = 0; fpsFrames = 0; }
 }
 
 resize();
