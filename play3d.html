@@ -149,7 +149,7 @@ import {
   doMove, moveToUsi, usiToMove,
   moveTo, moveFrom, movePro, isDrop, dropType,
   colorOf, typeOf, baseOf, col, row, inCheck,
-  BLACK, WHITE, EMPTY, FU, KY, KE, GI, KI, KA, HI, TO,
+  BLACK, WHITE, EMPTY, FU, KY, KE, GI, KI, KA, HI, TO, NY, NK, NG,
 } from './src/shogi.js';
 import { Npc } from './src/npc.js';
 
@@ -558,11 +558,14 @@ try {
   document.documentElement.style.setProperty('--sol-me', `url("${makeSoldierIcon(iconGeom, iconParams)}")`);
 }
 
-/* ── 金の幟 ──────────────────────────────────────────────
-   骨もアニメも無い静的メッシュ。盤上の金にだけ、駒とは別に1本立てる。
+/* ── 金の動きをする駒の幟 ────────────────────────────────
+   骨もアニメも無い静的メッシュ。盤上の該当駒に、駒とは別に1本立てる。
    両軍とも画面の同じ側・同じ向きに見せたいので、駒の回転（敵は180度）には追随させず、
    ワールド固定のずらし量と向きのまま置く。 */
-const NOBORI_MAX = 4;                    // 金は全部で4枚。片陣営が盤上に持てるのもその数まで
+/* 金と同じ動きになる駒。成り駒の姿は歩や銀のままなので、幟で見分けられるようにする。
+   馬・龍は金と動きが違うので含めない。 */
+const GOLD_MOVE = new Set([KI, TO, NY, NK, NG]);
+const NOBORI_MAX = 20;                   // と金などを含むと片陣営でこの本数に達しうる
 const NOBORI_SIDE = 0.20 * 0.7026;       // 横へのずらし（駒の全高に対する比）
 const NOBORI_BACK = 0.05 * 0.7026;       // 駒の背面側（自軍の背＝手前）へのずらし
 const noboriPool = [[], []];             // 0=自軍 1=敵軍
@@ -710,14 +713,14 @@ function writeTeamInstanced(mesh, list){
   }
   mesh.instanceMatrix.needsUpdate = true;
 }
-/* 幟を金のいるマスへ置く。向きは触らない（ワールド固定＝画面基準で両軍そろう）。
+/* 幟を該当駒のいるマスへ置く。向きは触らない（ワールド固定＝画面基準で両軍そろう）。
    駒の大きさ倍率はずらし量にも掛け、駒との位置関係を倍率によらず保つ。 */
 function writeBanners(list){
   const base = PIECE_BASE * SOL_STEPS[solStep];
   const idx = [0, 0];
   for (const b of list){
     const pool = noboriPool[b.team], k = idx[b.team]++;
-    if (k >= pool.length) continue;
+    if (k >= pool.length){ console.warn(`幟が上限 ${pool.length} を超えたので出しません`); continue; }
     const o = pool[k];
     o.position.set(b.x + NOBORI_SIDE*base, 0, b.z + NOBORI_BACK*base);
     o.scale.setScalar(base);
@@ -810,13 +813,13 @@ function layout(){
     const p = pos.board[sq]; if (p === EMPTY) continue;
     if (anim && sq === anim.to){
       const e = moverEntry(); listFor(anim.moverColor).push(e);
-      if (e.type === KI) banners.push({ x:e.x, z:e.z, team: teamOf(anim.moverColor) });
+      if (GOLD_MOVE.has(e.type)) banners.push({ x:e.x, z:e.z, team: teamOf(anim.moverColor) });
       continue;
     }
     const w = worldOfSq(sq);
     listFor(colorOf(p)).push({ x:w.x, y:0, z:w.z, rx:0, ry:ryOf(colorOf(p)), rz:0,
       type: typeOf(p), jitter: jitterBySq[sq], mx:1, my:1, mz:1 });
-    if (typeOf(p) === KI) banners.push({ x:w.x, z:w.z, team: teamOf(colorOf(p)) });
+    if (GOLD_MOVE.has(typeOf(p))) banners.push({ x:w.x, z:w.z, team: teamOf(colorOf(p)) });
   }
   // 取られた駒は盤から消えているので幟も出ない（つぶれる演出には参加しない）。
   if (anim && anim.cap) listFor(anim.capColor).push(victimEntry());
