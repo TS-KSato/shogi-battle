@@ -122,6 +122,8 @@
         <option value="4k4/9/9/9/4R4/9/9/9/4K4 b - 1">飛が成る（龍）</option>
         <option value="4k4/9/4P4/9/9/9/9/9/4K4 b - 1">歩が成って王手</option>
         <option value="4k4/3g1g3/2+N+P+P1+S2/5+P3/9/9/3+l+p+p3/3G1G3/4K4 b - 1">幟が多い</option>
+        <option value="4k4/9/9/9/9/3p1p3/3B1+B3/9/4K4 b - 1">馬と角（青）</option>
+        <option value="4k4/9/3b1+b3/3P1P3/9/9/9/9/4K4 b - 1">馬と角（赤）</option>
       </select>
     </div>
   </div>
@@ -150,7 +152,7 @@ import {
   doMove, moveToUsi, usiToMove,
   moveTo, moveFrom, movePro, isDrop, dropType,
   colorOf, typeOf, baseOf, col, row, inCheck,
-  BLACK, WHITE, EMPTY, FU, KY, KE, GI, KI, KA, HI, TO, NY, NK, NG,
+  BLACK, WHITE, EMPTY, FU, KY, KE, GI, KI, KA, HI, TO, NY, NK, NG, UM,
 } from './src/shogi.js';
 import { Npc } from './src/npc.js';
 
@@ -427,7 +429,11 @@ function makeTeamMesh(geom, material){
    駒種ごとに別モデル。個体は個別の SkinnedMesh（InstancedMesh は骨の姿勢を持てない）。
    1体を家族の最大数ぶん複製し、個体ごとに再生位置と速度をずらして同期を崩す。 */
 /* 片陣営が一度に持てる各駒種の最大数（成り駒は元の駒に数える）。少し余裕を持たせる。 */
-const POOL_CAP = { fu:20, kyo:4, kei:4, gin:4, kin:4, kaku:2, hisha:2, gyoku:2 };
+const POOL_CAP = { fu:20, kyo:4, kei:4, gin:4, kin:4, kaku:2, hisha:2, gyoku:2, uma:2 };
+/* プール名の一覧。馬だけ元の駒と別のモデルを使うので BASE_NAME に uma を足したもの。
+   BASE_NAME 自体は scaleOf や持ち駒アイコンでも使うので、そちらは触らない。 */
+const POOL_NAMES = [...BASE_NAME, 'uma'];
+const poolNameOf = t => t === UM ? 'uma' : BASE_NAME[baseOf(t)];
 function loadGLTF(url){
   return new Promise((res, rej) => {
     if (!THREE.GLTFLoader) return rej(new Error('GLTFLoader 未読込'));
@@ -521,11 +527,15 @@ try {
   // 名前は駒種の内部名（BASE_NAME）そのまま。ファイルを足すだけで反映される。
   const resolve = async (name, team) => {
     if (name === 'fu') return fuG[team];
-    try { return await loadGLTF(`./assets/${name}_${team === 0 ? 'blue' : 'red'}_idle.glb`); }
-    catch { return fuG[team]; }                 // モデルが無い駒種は歩で代用
+    const side = team === 0 ? 'blue' : 'red';
+    // 馬だけ成った姿の別モデル。無ければ角で代用し、角も無ければ歩まで落ちる。
+    const url = name === 'uma' ? `./assets/kaku_${side}_promoted.glb`
+                               : `./assets/${name}_${side}_idle.glb`;
+    try { return await loadGLTF(url); }
+    catch { return name === 'uma' ? resolve('kaku', team) : fuG[team]; }
   };
   const blueG = {};
-  await Promise.all(BASE_NAME.map(async name => {
+  await Promise.all(POOL_NAMES.map(async name => {
     const [gb, gr] = await Promise.all([resolve(name, 0), resolve(name, 1)]);
     humanPools[name] = makePool(gb, POOL_CAP[name]);   // 手前・自軍
     oppPools[name]   = makePool(gr, POOL_CAP[name]);   // 奥・敵軍
@@ -680,12 +690,12 @@ const dummy = new THREE.Object3D();
 const shadowDummy = new THREE.Object3D();
 
 /* 骨付き：各個体を駒種名のプールへ振り分けて姿勢を置く。余りは不可視にして描画から外す。
-   成り駒は baseOf で元の駒のプール（＝元の駒のモデル）に入る。 */
+   成り駒は元の駒のプール（＝元の駒のモデル）に入る。馬だけ専用モデルなので別プール。 */
 function applyTeamSkinned(pools, list){
   const idx = {};
-  for (const name of BASE_NAME) idx[name] = 0;
+  for (const name of POOL_NAMES) idx[name] = 0;
   for (const e of list){
-    const name = BASE_NAME[baseOf(e.type)];
+    const name = poolNameOf(e.type);
     const pool = pools[name], k = idx[name]++;
     if (k >= pool.length) continue;                 // 想定外の超過は描かない（POOL_CAP で防ぐ）
     const m = pool[k], base = PIECE_BASE * SOL_STEPS[solStep] * scaleOf(e.type) * e.jitter;
@@ -694,7 +704,7 @@ function applyTeamSkinned(pools, list){
     m.root.scale.set(base*e.mx, base*e.my, base*e.mz);
     m.root.visible = true;
   }
-  for (const name of BASE_NAME){
+  for (const name of POOL_NAMES){
     const pool = pools[name];
     for (let k = idx[name]; k < pool.length; k++) pool[k].root.visible = false;
     pool.active = idx[name];
@@ -1217,7 +1227,7 @@ let fpsAccum = 0, fpsFrames = 0;
 /* 待機モーションを進める。骨付きは各個体のミキサー、骨なし・箱は頂点揺れの時刻。 */
 function updateAnims(dt){
   if (skinned){
-    for (const name of BASE_NAME){
+    for (const name of POOL_NAMES){
       const hp = humanPools[name]; for (let i = 0; i < hp.active; i++) hp[i].mixer.update(dt);
       const op = oppPools[name];   for (let i = 0; i < op.active; i++) op[i].mixer.update(dt);
     }
