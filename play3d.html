@@ -124,6 +124,9 @@
         <option value="4k4/3g1g3/2+N+P+P1+S2/5+P3/9/9/3+l+p+p3/3G1G3/4K4 b - 1">幟が多い</option>
         <option value="4k4/9/9/9/9/3p1p3/3B1+B3/9/4K4 b - 1">馬と角（青）</option>
         <option value="4k4/9/3b1+b3/3P1P3/9/9/9/9/4K4 b - 1">馬と角（赤）</option>
+        <option value="4k4/9/9/9/9/3p1p3/3R1+R3/9/4K4 b - 1">龍と飛（青）</option>
+        <option value="4k4/9/3r1+r3/3P1P3/9/9/9/9/4K4 b - 1">龍と飛（赤）</option>
+        <option value="4k4/9/9/9/9/9/2G1+R1G2/9/4K4 b - 1">龍と金が隣</option>
       </select>
     </div>
   </div>
@@ -152,7 +155,7 @@ import {
   doMove, moveToUsi, usiToMove,
   moveTo, moveFrom, movePro, isDrop, dropType,
   colorOf, typeOf, baseOf, col, row, inCheck,
-  BLACK, WHITE, EMPTY, FU, KY, KE, GI, KI, KA, HI, TO, NY, NK, NG, UM,
+  BLACK, WHITE, EMPTY, FU, KY, KE, GI, KI, KA, HI, TO, NY, NK, NG, UM, RY,
 } from './src/shogi.js';
 import { Npc } from './src/npc.js';
 
@@ -429,11 +432,13 @@ function makeTeamMesh(geom, material){
    駒種ごとに別モデル。個体は個別の SkinnedMesh（InstancedMesh は骨の姿勢を持てない）。
    1体を家族の最大数ぶん複製し、個体ごとに再生位置と速度をずらして同期を崩す。 */
 /* 片陣営が一度に持てる各駒種の最大数（成り駒は元の駒に数える）。少し余裕を持たせる。 */
-const POOL_CAP = { fu:20, kyo:4, kei:4, gin:4, kin:4, kaku:2, hisha:2, gyoku:2, uma:2 };
-/* プール名の一覧。馬だけ元の駒と別のモデルを使うので BASE_NAME に uma を足したもの。
+const POOL_CAP = { fu:20, kyo:4, kei:4, gin:4, kin:4, kaku:2, hisha:2, gyoku:2, uma:2, ryu:2 };
+/* 成った姿を別モデルで出す駒と、その代用元。読み込めなければ元の駒の姿に落ちる。 */
+const PROMOTED_OF = { uma: 'kaku', ryu: 'hisha' };
+/* プール名の一覧。馬・龍は元の駒と別モデルなので BASE_NAME にそれらを足したもの。
    BASE_NAME 自体は scaleOf や持ち駒アイコンでも使うので、そちらは触らない。 */
-const POOL_NAMES = [...BASE_NAME, 'uma'];
-const poolNameOf = t => t === UM ? 'uma' : BASE_NAME[baseOf(t)];
+const POOL_NAMES = [...BASE_NAME, 'uma', 'ryu'];
+const poolNameOf = t => t === UM ? 'uma' : t === RY ? 'ryu' : BASE_NAME[baseOf(t)];
 function loadGLTF(url){
   return new Promise((res, rej) => {
     if (!THREE.GLTFLoader) return rej(new Error('GLTFLoader 未読込'));
@@ -527,12 +532,12 @@ try {
   // 名前は駒種の内部名（BASE_NAME）そのまま。ファイルを足すだけで反映される。
   const resolve = async (name, team) => {
     if (name === 'fu') return fuG[team];
-    const side = team === 0 ? 'blue' : 'red';
-    // 馬だけ成った姿の別モデル。無ければ角で代用し、角も無ければ歩まで落ちる。
-    const url = name === 'uma' ? `./assets/kaku_${side}_promoted.glb`
-                               : `./assets/${name}_${side}_idle.glb`;
+    const side = team === 0 ? 'blue' : 'red', from = PROMOTED_OF[name];
+    // 成った姿は別ファイル。無ければ元の駒で代用し、それも無ければ歩まで落ちる。
+    const url = from ? `./assets/${from}_${side}_promoted.glb`
+                     : `./assets/${name}_${side}_idle.glb`;
     try { return await loadGLTF(url); }
-    catch { return name === 'uma' ? resolve('kaku', team) : fuG[team]; }
+    catch { return from ? resolve(from, team) : fuG[team]; }
   };
   const blueG = {};
   await Promise.all(POOL_NAMES.map(async name => {
@@ -598,6 +603,25 @@ try {
   });
 } catch (err) {
   console.warn('幟の読み込みに失敗、幟なしで続行:', err && err.message);
+}
+
+/* ── 龍の大砲 ────────────────────────────────────────────
+   幟と同じ仕組み。陣営色を持たないので陣営で分けず1つのプールで足りる。
+   長軸が前後を向いた状態で作ってあるので回転させない。 */
+const TAIHO_MAX = 6;                     // 龍は片陣営2枚・両軍で4枚。余裕を見た数
+const TAIHO_SIDE = 0.35 * 0.7026;        // 横へのずらし（駒の全高に対する比）
+const taihoPool = [];
+try {
+  const g = await loadGLTF('./assets/taiho.glb');
+  const matFor = sharedLambert(false);
+  for (let k = 0; k < TAIHO_MAX; k++){
+    const root = g.scene.clone(true);
+    root.traverse(o => { if (o.isMesh) o.material = matFor(o.material); });
+    root.visible = false; scene.add(root);
+    taihoPool.push(root);
+  }
+} catch (err) {
+  console.warn('大砲の読み込みに失敗、大砲なしで続行:', err && err.message);
 }
 
 const shadowTex = makeShadowTexture();
@@ -744,6 +768,20 @@ function writeBanners(list){
     for (let k = idx[t]; k < pool.length; k++) pool[k].visible = false;
   }
 }
+/* 大砲を龍のいるマスへ置く。幟と同じくワールド固定で、駒の回転には追随させない。 */
+function writeCannons(list){
+  const base = PIECE_BASE * SOL_STEPS[solStep];
+  let n = 0;
+  for (const c of list){
+    const k = n++;
+    if (k >= taihoPool.length){ console.warn(`大砲が上限 ${taihoPool.length} を超えたので出しません`); continue; }
+    const o = taihoPool[k];
+    o.position.set(c.x + TAIHO_SIDE*base, 0, c.z);
+    o.scale.setScalar(base);
+    o.visible = true;
+  }
+  for (let k = n; k < taihoPool.length; k++) taihoPool[k].visible = false;
+}
 /* 足元の影は骨付き・骨なしとも同じ InstancedMesh。跳ねるほど縮めて接地感を残す。 */
 function writeShadows(shadowMesh, list){
   for (let k = 0; k < MAXI; k++){
@@ -820,19 +858,21 @@ function addHandEntries(list, color, near){
 }
 
 function layout(){
-  const human = [], opp = [], banners = [];
+  const human = [], opp = [], banners = [], cannons = [];
   const listFor = c => teamOf(c) === 0 ? human : opp;
   for (let sq = 0; sq < 81; sq++){
     const p = pos.board[sq]; if (p === EMPTY) continue;
     if (anim && sq === anim.to){
       const e = moverEntry(); listFor(anim.moverColor).push(e);
       if (GOLD_MOVE.has(e.type)) banners.push({ x:e.x, z:e.z, team: teamOf(anim.moverColor) });
+      if (e.type === RY) cannons.push({ x:e.x, z:e.z });
       continue;
     }
     const w = worldOfSq(sq);
     listFor(colorOf(p)).push({ x:w.x, y:0, z:w.z, rx:0, ry:ryOf(colorOf(p)), rz:0,
       type: typeOf(p), jitter: jitterBySq[sq], mx:1, my:1, mz:1 });
     if (GOLD_MOVE.has(typeOf(p))) banners.push({ x:w.x, z:w.z, team: teamOf(colorOf(p)) });
+    if (typeOf(p) === RY) cannons.push({ x:w.x, z:w.z });
   }
   // 取られた駒は盤から消えているので幟も出ない（つぶれる演出には参加しない）。
   if (anim && anim.cap) listFor(anim.capColor).push(victimEntry());
@@ -848,6 +888,7 @@ function layout(){
   writeShadows(shadowHuman, human);
   writeShadows(shadowOpp,   opp);
   writeBanners(banners);
+  writeCannons(cannons);
 }
 
 /* ═════════ 拡大・視点移動（俯角35度・回転なしのまま、投影行列だけで拡大／移動）═════════
