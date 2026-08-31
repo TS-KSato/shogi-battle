@@ -107,7 +107,7 @@
 
 <div class="overlay" id="resultOv"><div class="card">
   <p class="big" id="resultBig"></p><p id="resultSub"></p>
-  <button id="resultClose" class="primary">閉じる</button>
+  <div class="rowb"><button id="resultClose" class="primary">閉じる</button><button id="resultTitle">タイトルへ</button></div>
 </div></div>
 
 <!-- 盤面の描画は lab/idle-test.html と同じ Three.js。GitHub Pages では CDN 直リンクで届く。 -->
@@ -1012,15 +1012,18 @@ async function scheduleNpc(){
   let usi = res && res.usi;
   const legalNow = legalMoves(pos);
   const legalUsi = new Set(legalNow.map(moveToUsi));
-  let note;
+  let fallback;
   if (usi && legalUsi.has(usi)){
-    note = res.fallback ? '退避手' : `worker d${res.depth ?? '?'} ${res.ms ?? '?'}ms`;
+    fallback = !!res.fallback;
+    console.log(`NPC: ${usi} worker d${res.depth ?? '?'} ${res.ms ?? '?'}ms${fallback ? ' 退避手' : ''}`);
   } else {
     if (legalNow.length === 0){ over = true; showResult('あなたの勝ち', 'NPC は指す手がありません'); return; }
-    usi = moveToUsi(legalNow[Math.floor(Math.random()*legalNow.length)]); note = '退避手';
+    usi = moveToUsi(legalNow[Math.floor(Math.random()*legalNow.length)]); fallback = true;
+    console.log(`NPC: ${usi} 退避手（worker が指し手を返せなかった）`);
   }
   await commitMove(usiToMove(usi));
-  infoEl.textContent = `NPC: ${usi}（${note}）`;
+  // 退避手のときだけ画面に残す。worker が答えられていないことに気づける必要がある。
+  infoEl.textContent = fallback ? 'NPC: 退避手' : '';
   if (checkTerminalAfterMove('NPC')) return;
   legal = legalMoves(pos); hlDirty = true; renderStatus();
 }
@@ -1185,6 +1188,7 @@ $('promoGo').addEventListener('click', () => {
   if (mv !== undefined) humanPlay(mv);
 });
 $('resultClose').addEventListener('click', () => $('resultOv').classList.remove('on'));
+$('resultTitle').addEventListener('click', () => { location.href = './index.html'; });
 $('resign').addEventListener('click', () => {
   if (over) return; over = true; thinking = false; hlDirty = true;
   closePromo();                                 // 成り確認の途中で投了しても盤の表示と選択を残さない
