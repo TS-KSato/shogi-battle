@@ -49,7 +49,6 @@
             calc(10px + env(safe-area-inset-left))}
   .myhand{display:flex;flex-wrap:wrap;gap:5px;align-items:center;min-height:31px;
     margin-bottom:9px;font-size:11px;color:var(--dim)}
-  .myhand .lead{margin-right:2px}
   .controls{display:flex;flex-wrap:wrap;gap:6px}
   .grp{display:flex;gap:6px;flex:1;min-width:0}
   button,select{font:inherit;font-size:12px;color:var(--ink);background:#1a1b18;
@@ -90,17 +89,6 @@
   <div id="panel">
     <div class="myhand" id="handBottom"></div>
     <div class="controls">
-      <div class="grp">
-        <select id="side" title="手番">
-          <option value="0">あなた=先手（手前）</option>
-          <option value="1">あなた=後手（奥）</option>
-        </select>
-        <select id="level" title="強さ">
-          <option value="easy">やさしい</option>
-          <option value="normal" selected>ふつう</option>
-          <option value="hard">つよい</option>
-        </select>
-      </div>
       <div class="grp">
         <button class="primary" id="newGame">新規対局</button>
         <button class="ghost" id="resign">投了</button>
@@ -1062,7 +1050,6 @@ function renderStatus(){
 /* 下部UIは自分の持ち駒だけ（打つための操作面）。敵の持ち駒は 3D 空間に出す。 */
 function renderHands(){
   const el = $('handBottom'); el.innerHTML = '';
-  const lead = document.createElement('span'); lead.className='lead'; lead.textContent='持ち駒'; el.appendChild(lead);
   let any = false;
   for (const t of HAND_ORDER){
     const n = pos.hands[humanColor][t]; if (!n) continue; any = true;
@@ -1208,11 +1195,13 @@ $('reset').addEventListener('click', () => { zoom = 1; panX = 0; panY = 0; apply
 
 /* ═════════ 新規対局 ═════════ */
 function newGame(){
-  humanColor = +$('side').value;
-  level = $('level').value;
+  // 手番と強さはタイトル画面から ?side= ?level= で渡る。無い・不正なら先手・ふつう。
+  const q = new URLSearchParams(location.search);
+  humanColor = q.get('side') === '1' ? WHITE : BLACK;
+  level = ['easy','normal','hard'].includes(q.get('level')) ? q.get('level') : 'normal';
   flip = (humanColor === WHITE);
   let sfen = START_SFEN;
-  try { const q = new URLSearchParams(location.search).get('sfen'); if (q){ parseSfen(q); sfen = q; } }
+  try { const s = q.get('sfen'); if (s){ parseSfen(s); sfen = s; } }
   catch { sfen = START_SFEN; }
   pos = parseSfen(sfen);
   legal = []; clearSelection(); lastMove = null;

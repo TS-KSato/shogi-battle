@@ -3,32 +3,78 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>将棋3Dバトル — 開発中</title>
+<title>将棋 — 人間 対 NPC</title>
 <style>
-  :root{ --ink:#e8e3d8; --dim:#8b8578; --line:rgba(232,227,216,.16); --hit:#c9a227; }
-  body{margin:0;min-height:100vh;background:#0c0d0b;color:var(--ink);
-    font:15px/1.9 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-    display:flex;align-items:center;justify-content:center;padding:32px 20px}
-  main{max-width:520px;width:100%}
-  h1{font-size:17px;font-weight:500;letter-spacing:.08em;margin:0 0 6px}
-  p{color:var(--dim);font-size:13px;margin:0 0 26px}
-  ul{list-style:none;padding:0;margin:0}
-  li{border-top:1px solid var(--line)}
-  li:last-child{border-bottom:1px solid var(--line)}
-  a{display:block;padding:14px 4px;color:var(--ink);text-decoration:none}
-  a:hover,a:focus-visible{color:var(--hit);outline:none}
-  a small{display:block;color:var(--dim);font-size:11px}
+  :root{ --ink:#e8e3d8; --dim:#8b8578; --line:rgba(232,227,216,.16);
+         --hit:#c9a227; --bg:#0c0d0b; --panel:#111210; }
+  *{box-sizing:border-box}
+  html,body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);
+    font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    -webkit-text-size-adjust:100%}
+  /* viewport-fit=cover なので、四辺は safe-area のぶん逃がす。 */
+  body{display:flex;flex-direction:column;align-items:center;justify-content:center;
+    min-height:100vh;
+    padding:calc(28px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right))
+            calc(20px + env(safe-area-inset-bottom)) calc(20px + env(safe-area-inset-left))}
+  main{width:100%;max-width:320px}
+
+  h1{font-size:20px;font-weight:500;letter-spacing:.14em;margin:0 0 4px}
+  .lead{color:var(--dim);font-size:11px;margin:0 0 30px;line-height:1.8}
+
+  .row{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+  .row label{flex:0 0 3.5em;color:var(--dim);font-size:11px}
+  select{flex:1;min-width:0;font:inherit;font-size:12px;color:var(--ink);background:#1a1b18;
+    border:1px solid var(--line);border-radius:3px;padding:8px 6px;min-height:44px;cursor:pointer;
+    -webkit-tap-highlight-color:transparent}
+  button{width:100%;margin-top:14px;font:inherit;font-size:14px;letter-spacing:.08em;
+    color:#f4e6ae;background:#2b2718;border:1px solid var(--hit);border-radius:3px;
+    padding:12px 6px;min-height:52px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  select:focus-visible,button:focus-visible{outline:2px solid var(--hit);outline-offset:2px}
+
+  /* 開発用。公開時にこの footer ごと消す。 */
+  footer{margin-top:34px;border-top:1px solid var(--line);padding-top:10px}
+  footer p{margin:0 0 4px;color:var(--dim);font-size:10px;letter-spacing:.08em}
+  footer a{display:inline-block;margin-right:12px;padding:4px 0;
+    color:var(--dim);font-size:10px;text-decoration:none}
+  footer a:hover,footer a:focus-visible{color:var(--hit);outline:none}
 </style>
 </head>
 <body>
 <main>
-  <h1>将棋のルールを核とした和風ターン制3Dバトル</h1>
-  <p>開発中。2D盤面での対局から動きます。</p>
-  <ul>
-    <li><a href="./play.html">2Dで対局する（人間 対 NPC）<small>ルール層とNPCで最後まで指せる。3D・演出なし</small></a></li>
-    <li><a href="./lab/idle-test.html">待機モーションの比較<small>40体を静止 / シェーダ揺れ / 骨アニメで見比べる</small></a></li>
-    <li><a href="./lab/capture-test.html">駒取り演出の比較<small>撃破の型・長さ・衝突の強さを調整する</small></a></li>
-  </ul>
+  <h1>将棋</h1>
+  <p class="lead">盤の上の駒ではなく、野に並ぶ兵として指す。</p>
+
+  <div class="row">
+    <label for="side">手番</label>
+    <select id="side">
+      <option value="0" selected>先手（手前）</option>
+      <option value="1">後手（奥）</option>
+    </select>
+  </div>
+  <div class="row">
+    <label for="level">強さ</label>
+    <select id="level">
+      <option value="easy">やさしい</option>
+      <option value="normal" selected>ふつう</option>
+      <option value="hard">つよい</option>
+    </select>
+  </div>
+  <button id="start">対局する</button>
+
+  <footer>
+    <p>開発用</p>
+    <a href="./play.html">2D盤面</a>
+    <a href="./lab/idle-test.html">待機モーション</a>
+    <a href="./lab/capture-test.html">駒取り演出</a>
+  </footer>
 </main>
+
+<script>
+document.getElementById('start').addEventListener('click', () => {
+  const side = document.getElementById('side').value;
+  const level = document.getElementById('level').value;
+  location.href = `./play3d.html?side=${side}&level=${level}`;
+});
+</script>
 </body>
 </html>
