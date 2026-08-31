@@ -37,7 +37,21 @@
   footer a{display:inline-block;margin-right:12px;padding:4px 0;
     color:var(--dim);font-size:10px;text-decoration:none}
   footer a:hover,footer a:focus-visible{color:var(--hit);outline:none}
+  /* ── 見た目B（比較用）──────────────────────────────────────
+     色と書体だけを上書きする。寸法・余白・配置・当たり判定は a と同じに保つ。
+     案が決まったらこのブロックと head の切り替えスクリプトごと消す。 */
+  html[data-ui="b"]{ --bg:#14110c; --panel:#1b1710; --ink:#ede3cd; --dim:#9a8f78;
+                     --line:rgba(201,162,39,.28) }
+  html[data-ui="b"] select{background:#221c12}
+  html[data-ui="b"] button{background:#33291a}
+  /* 明朝は表題だけ。11〜13pxの明朝は細って読めないので、操作系と数字は等幅のまま。 */
+  html[data-ui="b"] h1{font-family:"Hiragino Mincho ProN","Yu Mincho",serif}
 </style>
+<script>
+  // 見た目の2案を見比べるための仮の仕掛け。既定は a（現状のまま）。案が決まったら消す。
+  { const u = new URLSearchParams(location.search).get('ui');
+    if (u === 'b') document.documentElement.dataset.ui = 'b'; }
+</script>
 </head>
 <body>
 <main>
@@ -59,6 +73,14 @@
       <option value="hard">つよい</option>
     </select>
   </div>
+  <!-- 見た目の2案を見比べるための仮置き。案が決まったらこの行と b の指定を消す。 -->
+  <div class="row">
+    <label for="ui">見た目</label>
+    <select id="ui">
+      <option value="a" selected>A</option>
+      <option value="b">B</option>
+    </select>
+  </div>
   <button id="start">対局する</button>
 
   <footer>
@@ -70,10 +92,16 @@
 </main>
 
 <script>
+const ui = document.getElementById('ui');
+ui.value = document.documentElement.dataset.ui === 'b' ? 'b' : 'a';
+ui.addEventListener('change', () => {              // 選んだ見た目をこの画面にも即座に効かせる
+  if (ui.value === 'b') document.documentElement.dataset.ui = 'b';
+  else document.documentElement.removeAttribute('data-ui');
+});
 document.getElementById('start').addEventListener('click', () => {
   const side = document.getElementById('side').value;
   const level = document.getElementById('level').value;
-  location.href = `./play3d.html?side=${side}&level=${level}`;
+  location.href = `./play3d.html?side=${side}&level=${level}&ui=${ui.value}`;
 });
 </script>
 </body>

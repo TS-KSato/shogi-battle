@@ -78,7 +78,24 @@
   #promoNo.pick{border-color:#f0ece0}
   #promoGo{width:100%;margin-top:8px;padding:10px}
   #promoGo:disabled{opacity:.4;cursor:default}
+  /* ── 見た目B（比較用）──────────────────────────────────────
+     色と書体だけを上書きする。寸法・余白・配置・当たり判定は a と同じに保つ。
+     案が決まったらこのブロックと head の切り替えスクリプトごと消す。 */
+  html[data-ui="b"]{ --bg:#14110c; --panel:#1b1710; --ink:#ede3cd; --dim:#9a8f78;
+                     --line:rgba(201,162,39,.28) }
+  html[data-ui="b"] button,html[data-ui="b"] select{background:#221c12}
+  html[data-ui="b"] button.primary{background:#33291a}
+  /* 明朝はこの4つだけ。11〜13pxの明朝は細って読めないので、操作系と数字は等幅のまま。 */
+  html[data-ui="b"] #kifu,
+  html[data-ui="b"] .card .big,
+  html[data-ui="b"] #promoOv .card p:first-of-type{
+    font-family:"Hiragino Mincho ProN","Yu Mincho",serif}
 </style>
+<script>
+  // 見た目の2案を見比べるための仮の仕掛け。既定は a（現状のまま）。案が決まったら消す。
+  { const u = new URLSearchParams(location.search).get('ui');
+    if (u === 'b') document.documentElement.dataset.ui = 'b'; }
+</script>
 </head>
 <body>
 <div id="app">
