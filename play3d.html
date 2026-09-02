@@ -336,7 +336,7 @@ rim.position.set(-5, 2.5, -6); scene.add(rim);
   lines.position.y = 0.004; lines.renderOrder = 2; scene.add(lines);
 }
 
-/* 盤の目盛り。筋（1〜9）を奥の縁、段（一〜九）を右の縁に、マス線と同じ層で置く。
+/* 盤の目盛り。筋（1〜9）を手前の縁、段（一〜九）を右の縁に、マス線と同じ層で置く。
    文字は canvas に描いて板に貼る。後手のときは盤の反転に合わせて並びを反転する。 */
 function scaleMark(text){
   const c = document.createElement('canvas'); c.width = c.height = 64;
@@ -351,7 +351,7 @@ const fileMarks = Array.from({length:9}, (_, c) => scaleMark(String(9 - c)));   
 const rankMarks = Array.from({length:9}, (_, r) => scaleMark(RANK_KANJI[r]));   // 添字は row
 function placeScale(){
   const out = (N*SQ)/2 + 0.3*SQ;                    // 盤の縁から 0.3 マス外側
-  fileMarks.forEach((m, c) => m.position.set(wx(flip ? 8-c : c), 0.004, -out));
+  fileMarks.forEach((m, c) => m.position.set(wx(flip ? 8-c : c), 0.004, out));
   rankMarks.forEach((m, r) => m.position.set(out, 0.004, wz(flip ? 8-r : r)));
 }
 
@@ -824,7 +824,7 @@ function addHandEntries(list, color, near){
   if (!total) return;
   const perRow = 10, dx = 0.8, dz = 0.85;
   const ry = near ? Math.PI : 0, zdir = near ? 1 : -1;   // 盤上と同じ向き（自=奥向き、敵=手前向き）
-  const z0 = near ? (N*SQ)/2 + 0.8 : -((N*SQ)/2 + 0.8);
+  const z0 = near ? (N*SQ)/2 + 2.3 : -((N*SQ)/2 + 0.8);   // 手前は筋の目盛り（z=4.8）の外に置く
   let i = 0;
   for (const t of HAND_ORDER){
     for (let c = 0; c < hand[t]; c++, i++){
@@ -931,7 +931,7 @@ function fitStage(){
 function resize(){
   const w = view.clientWidth, h = view.clientHeight;
   renderer.setSize(w, h, false); camera.aspect = w / h;
-  const halfW = (N*SQ)/2 + 0.05;                    // 端の筋ぎりぎりまで使って盤を大きく
+  const halfW = (N*SQ)/2 / 0.94;                    // 盤の手前の辺を画面幅の 94% に。残りに段の目盛りが入る
   const vFov = camera.fov * Math.PI/180;
   const hFov = 2 * Math.atan(Math.tan(vFov/2) * camera.aspect);
   // 盤は手前へ傾くので、いちばん近い手前端の筋がいちばん広く映る。その手前端の
