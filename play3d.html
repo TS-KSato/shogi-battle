@@ -15,19 +15,17 @@
   #view{flex:1;min-height:0;position:relative}
   canvas{display:block;width:100%;height:100%;touch-action:none}
 
-  /* 3D の上に重ねる情報。盤のタップを邪魔しないよう pointer-events は切る */
-  #status{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;
-    gap:10px;padding:8px 11px;background:linear-gradient(#0c0d0bdd,transparent);
-    font-size:12px;pointer-events:none}
+  /* 手番の行。下部パネルの最上段。右端は退避手の表示。 */
+  #turnRow{display:flex;justify-content:space-between;gap:10px;font-size:12px;margin-bottom:6px}
   #turn{color:var(--ink)} #turn.check{color:#e0653f}
   #info{color:var(--dim);font-size:11px;text-align:right;overflow:hidden;
     text-overflow:ellipsis;white-space:nowrap}
-  /* 戦闘ログ。直近2行だけを持ち駒の上に出し、押すと全履歴のシートを開く。
+  /* 戦闘ログ。直近5行だけを持ち駒の上に出し、押すと全履歴のシートを開く。
      行の高さを固定して、空でも1行でも枠の高さが変わらないようにする。 */
   #log{border:1px solid var(--line);border-radius:3px;padding:5px 8px;margin-bottom:9px;
     font-size:11px;line-height:1.55;cursor:pointer;-webkit-tap-highlight-color:transparent}
-  #log div{height:1.55em;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-  #log .old{color:var(--dim)} #log .new{color:var(--ink)}
+  #log div{height:1.55em;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--dim)}
+  #log div:last-child{color:var(--ink)}
   #logList{max-height:40vh;overflow-y:auto;text-align:left;font-size:12px;line-height:1.6;
     margin-bottom:10px;color:var(--ink)}
   #logClose{width:100%}
@@ -87,11 +85,10 @@
 </head>
 <body>
 <div id="app">
-  <div id="view">
-    <div id="status"><span id="turn">読み込み中…</span><span id="info"></span></div>
-  </div>
+  <div id="view"></div>
   <div id="panel">
-    <div id="log"><div class="old"></div><div class="new"></div></div>
+    <div id="turnRow"><span id="turn">読み込み中…</span><span id="info"></span></div>
+    <div id="log"><div></div><div></div><div></div><div></div><div></div></div>
     <div class="myhand" id="handBottom"></div>
     <div class="controls">
       <div class="grp">
@@ -1088,10 +1085,9 @@ function checkTerminalAfterMove(mover){
 function renderStatus(){
   if (over) return;
   const checkSide = inCheck(pos) ? pos.turn : -1;
-  let t = thinking ? 'NPC 考え中…' : (anim ? '…' : (pos.turn === humanColor ? 'あなたの手番' : 'NPC の手番'));
+  let t = thinking ? '敵の番…' : (anim ? '…' : (pos.turn === humanColor ? '味方の番' : '敵の番'));
   if (!thinking && !anim && pos.turn === humanColor && selected){
-    const nm = selected.kind === 'board' ? KANJI[typeOf(pos.board[selected.sq])] : KANJI[selected.pt];
-    if (nm) t += `・${nm}`;
+    t += `・${logName(selected.kind === 'board' ? typeOf(pos.board[selected.sq]) : selected.pt)}`;
   }
   if (checkSide >= 0 && !anim) t += '（王手）';
   turnEl.textContent = t;
@@ -1117,11 +1113,13 @@ function showResult(big, sub){
   $('resultOv').classList.add('on');
   turnEl.textContent = big; turnEl.classList.remove('check');
 }
-/* 直近2行を下部の枠へ（最新が下）。全履歴は枠を押したときのシートに出す。 */
+/* 直近5行を下部の枠へ（最新が下、最下段だけ --ink）。全履歴は枠を押したときのシートに出す。 */
 function renderLog(){
-  const n = logLines.length;
-  $('log').querySelector('.old').textContent = n > 1 ? logLines[n-2] : '';
-  $('log').querySelector('.new').textContent = n > 0 ? logLines[n-1] : '';
+  const rows = $('log').children, n = logLines.length;
+  for (let i = 0; i < rows.length; i++){
+    const k = n - rows.length + i;                    // 行が足りないあいだは上から空ける
+    rows[i].textContent = k >= 0 ? logLines[k] : '';
+  }
 }
 $('log').addEventListener('click', () => {
   const list = $('logList'); list.innerHTML = '';
