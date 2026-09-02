@@ -1205,7 +1205,11 @@ $('promoGo').addEventListener('click', () => {
   if (mv !== undefined) humanPlay(mv);
 });
 $('resultClose').addEventListener('click', () => $('resultOv').classList.remove('on'));
-$('resultTitle').addEventListener('click', () => { location.href = './index.html'; });
+// 見た目の比較のあいだだけ ?ui= を引き継ぐ。案が決まったらこの引き継ぎごと消す。
+$('resultTitle').addEventListener('click', () => {
+  const b = new URLSearchParams(location.search).get('ui') === 'b';
+  location.href = b ? './index.html?ui=b' : './index.html';
+});
 $('resign').addEventListener('click', () => {
   if (over) return; over = true; thinking = false; hlDirty = true;
   closePromo();                                 // 成り確認の途中で投了しても盤の表示と選択を残さない
