@@ -328,9 +328,8 @@ view.appendChild(renderer.domElement);
 const canvas = renderer.domElement;
 
 const scene = new THREE.Scene();
-const SKY = new THREE.Color(0xb7b3a6);   // 空＝霧の色。遠くの地面はここへ溶ける
+const SKY = new THREE.Color(0x76baf0);   // 舞台絵の空の上端付近の平均色。板の両脇と台の外に見える
 scene.background = SKY;
-scene.fog = new THREE.Fog(SKY, 14, 26);  // near/far は resize で距離に合わせる
 const camera = new THREE.PerspectiveCamera(34, 1, 0.5, 60);
 const TARGET = new THREE.Vector3(0, 0.0, 0.0);
 
@@ -341,12 +340,14 @@ sun.position.set(7, 4.5, 3); scene.add(sun);
 const rim = new THREE.DirectionalLight(0x8fa9d8, 0.4);   // 奥からの縁光で輪郭を盤から離す
 rim.position.set(-5, 2.5, -6); scene.add(rim);
 
-// 画面外まで続く一枚の地面。踏み荒らされた野の土。駒は上面 y=0 に立つ。
-const GROUND = 160;
+// 盤の周囲だけの「台」。踏み荒らされた野の土。駒は上面 y=0 に立つ。
+// 余白は持ち駒の列（盤端から 0.8、以降 0.85 刻み）が載る幅。2マスで2列＝20枚まで載る。
+const DAI_MARGIN = 2;
+const DAI = (N + 2*DAI_MARGIN) * SQ;
 const groundTex = makeGroundTexture();
-groundTex.repeat.set(GROUND/5, GROUND/5);
+groundTex.repeat.set(DAI/5, DAI/5);
 groundTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(GROUND, GROUND),
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(DAI, DAI),
   new THREE.MeshLambertMaterial({ map: groundTex }));
 ground.rotation.x = -Math.PI/2; scene.add(ground);
 
@@ -898,6 +899,36 @@ function clampView(){
   panY = clamp(panY, -lim, lim);
 }
 
+/* 舞台絵。台の奥端に垂直に立てた板に、絵の上から STAGE_BASE までを貼る。
+   STAGE_BASE は絵の中で陣幕の底（地面との境目）がある高さの割合。仮の値。
+   scene.background でなく Mesh にするのは、zoom/pan が投影行列なので盤と一緒に動くため。 */
+const STAGE_BASE = 0.63;
+const STAGE_Z = -DAI/2;
+let stage = null;
+new THREE.TextureLoader().load('./assets/stage/honjin.jpg', tex => {
+  tex.repeat.y = STAGE_BASE; tex.offset.y = 1 - STAGE_BASE;   // 陣幕の底より下は見せない
+  stage = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
+    new THREE.MeshBasicMaterial({ map: tex, fog: false }));   // 照明を受けない。絵の色そのまま
+  stage.position.z = STAGE_Z; scene.add(stage);
+  fitStage();
+});
+/* 等倍で板の上端が画面上端に届く高さにし、幅は絵の縦横比から決める。画面より広ければ
+   左右を等しく切り、狭ければそのまま（両脇は SKY）。板の下端は y=0 で台の奥端。 */
+function fitStage(){
+  if (!stage) return;                                          // 絵の読み込み前の resize
+  const q = camera.quaternion, C = camera.position;
+  const up = new THREE.Vector3(0, (1 + LENS)/baseE5, -1).applyQuaternion(q);   // 画面上端の中央へ向く視線
+  const H = C.y + up.y * (STAGE_Z - C.z) / up.z;
+  const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(q);
+  const depth = new THREE.Vector3(0, 0, STAGE_Z).sub(C).dot(fwd);   // 下端がいちばん遠く、いちばん幅が要る
+  const img = stage.material.map.image;
+  const natW = H * img.width / (img.height * STAGE_BASE);
+  const W = Math.min(natW, 2 * depth / baseE0);
+  stage.scale.set(W, H, 1); stage.position.y = H/2;
+  stage.material.map.repeat.x = W/natW;
+  stage.material.map.offset.x = (1 - W/natW)/2;
+}
+
 /* ═════════ 画面合わせ（idle-test を流用） ═════════ */
 function resize(){
   const w = view.clientWidth, h = view.clientHeight;
@@ -916,8 +947,7 @@ function resize(){
   baseE0 = camera.projectionMatrix.elements[0];     // 等倍の投影スケールを控える
   baseE5 = camera.projectionMatrix.elements[5];
   clampView(); applyView();                          // 拡大中の resize でも破綻しない
-  // 手前の地面ははっきり、遠くは空へ溶かす。盤の広さに合わせて距離を置く。
-  scene.fog.near = dist - 4; scene.fog.far = dist + 14;
+  fitStage();
 }
 addEventListener('resize', () => { resize(); });
 
