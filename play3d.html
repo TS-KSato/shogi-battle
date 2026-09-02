@@ -78,24 +78,7 @@
   #promoNo.pick{border-color:#f0ece0}
   #promoGo{width:100%;margin-top:8px;padding:10px}
   #promoGo:disabled{opacity:.4;cursor:default}
-  /* ── 見た目B（比較用）──────────────────────────────────────
-     色と書体だけを上書きする。寸法・余白・配置・当たり判定は a と同じに保つ。
-     案が決まったらこのブロックと head の切り替えスクリプトごと消す。 */
-  html[data-ui="b"]{ --bg:#14110c; --panel:#1b1710; --ink:#ede3cd; --dim:#9a8f78;
-                     --line:rgba(201,162,39,.28) }
-  html[data-ui="b"] button,html[data-ui="b"] select{background:#221c12}
-  html[data-ui="b"] button.primary{background:#33291a}
-  /* 明朝はこの4つだけ。11〜13pxの明朝は細って読めないので、操作系と数字は等幅のまま。 */
-  html[data-ui="b"] #kifu,
-  html[data-ui="b"] .card .big,
-  html[data-ui="b"] #promoOv .card p:first-of-type{
-    font-family:"Hiragino Mincho ProN","Yu Mincho",serif}
 </style>
-<script>
-  // 見た目の2案を見比べるための仮の仕掛け。既定は a（現状のまま）。案が決まったら消す。
-  { const u = new URLSearchParams(location.search).get('ui');
-    if (u === 'b') document.documentElement.dataset.ui = 'b'; }
-</script>
 </head>
 <body>
 <div id="app">
@@ -872,7 +855,7 @@ function clampView(){
 
 /* 舞台絵。カメラに正対させた板に絵を丸ごと貼り、いちばん奥の物体より遠くに置く。
    scene.background でなく Mesh にするのは、zoom/pan が投影行列なので盤と一緒に動くため。 */
-const STAGE_BASE = 0.64;     // 絵の上端から陣幕の底（地面との境目）までの割合。仮の値
+const STAGE_BASE = 0.64;     // 絵の上端から陣幕の底（地面との境目）までの割合。絵から測った実測値
 const STAGE_BEYOND = 8;      // 視線に沿って TARGET の奥へ置く距離。いちばん奥の物体（敵の
                              // 持ち駒の最奥 z≈-7.3、高さ 0.7）は TARGET の奥 5.6 なので、その先
 let stage = null;
@@ -1208,11 +1191,7 @@ $('promoGo').addEventListener('click', () => {
   if (mv !== undefined) humanPlay(mv);
 });
 $('resultClose').addEventListener('click', () => $('resultOv').classList.remove('on'));
-// 見た目の比較のあいだだけ ?ui= を引き継ぐ。案が決まったらこの引き継ぎごと消す。
-$('resultTitle').addEventListener('click', () => {
-  const b = new URLSearchParams(location.search).get('ui') === 'b';
-  location.href = b ? './index.html?ui=b' : './index.html';
-});
+$('resultTitle').addEventListener('click', () => { location.href = './index.html'; });
 $('resign').addEventListener('click', () => {
   if (over) return; over = true; thinking = false; hlDirty = true;
   closePromo();                                 // 成り確認の途中で投了しても盤の表示と選択を残さない
