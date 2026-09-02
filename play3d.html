@@ -99,9 +99,9 @@
 </div>
 
 <div class="overlay sheet" id="promoOv"><div class="card">
-  <p>成りますか？</p>
+  <p>進化させますか？</p>
   <p class="legend">押すと、その場合に行ける先が盤に出ます</p>
-  <div class="rowb"><button id="promoYes">成る</button><button id="promoNo">成らず</button></div>
+  <div class="rowb"><button id="promoYes">進化する</button><button id="promoNo">進化しない</button></div>
   <button id="promoGo" class="primary" disabled>この手で指す</button>
 </div></div>
 
@@ -311,6 +311,25 @@ rim.position.set(-5, 2.5, -6); scene.add(rim);
   const lines = new THREE.LineSegments(g, new THREE.LineBasicMaterial({
     color: 0x3a2a18, transparent: true, opacity: 0.60 }));
   lines.position.y = 0.004; lines.renderOrder = 2; scene.add(lines);
+}
+
+/* 盤の目盛り。筋（1〜9）を奥の縁、段（一〜九）を右の縁に、マス線と同じ層で置く。
+   文字は canvas に描いて板に貼る。後手のときは盤の反転に合わせて並びを反転する。 */
+function scaleMark(text){
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d');
+  g.fillStyle = '#3a2a18'; g.font = 'bold 50px sans-serif';
+  g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, 32, 34);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(0.35*SQ, 0.35*SQ),
+    new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent:true, depthWrite:false }));
+  m.rotation.x = -Math.PI/2; m.renderOrder = 2; scene.add(m); return m;
+}
+const fileMarks = Array.from({length:9}, (_, c) => scaleMark(String(9 - c)));   // 添字は col
+const rankMarks = Array.from({length:9}, (_, r) => scaleMark(RANK_KANJI[r]));   // 添字は row
+function placeScale(){
+  const out = (N*SQ)/2 + 0.3*SQ;                    // 盤の縁から 0.3 マス外側
+  fileMarks.forEach((m, c) => m.position.set(wx(flip ? 8-c : c), 0.004, -out));
+  rankMarks.forEach((m, r) => m.position.set(out, 0.004, wz(flip ? 8-r : r)));
 }
 
 /* 待機の揺れ（骨なし・頂点シェーダ。idle-test と同じ式） */
@@ -972,8 +991,8 @@ function chooseTarget(to){
   pendingPromo = cand;                                     // 成り／不成の確認
   const yes = afterMove(cand.find(m => movePro(m))), no = afterMove(cand.find(m => !movePro(m)));
   promoReach = yes.reach; promoReachNo = no.reach;         // どちらも「その場合に行ける先の全部」
-  $('promoYes').textContent = `成る　${yes.name}／行ける先 ${yes.reach.size}か所`;
-  $('promoNo').textContent  = `成らず　${no.name}／行ける先 ${no.reach.size}か所`;
+  $('promoYes').textContent = `進化する　${yes.name}／行ける先 ${yes.reach.size}か所`;
+  $('promoNo').textContent  = `進化しない　${no.name}／行ける先 ${no.reach.size}か所`;
   $('promoOv').classList.add('on');
   hlDirty = true;
 }
@@ -1206,7 +1225,7 @@ function newGame(){
   const q = new URLSearchParams(location.search);
   humanColor = q.get('side') === '1' ? WHITE : BLACK;
   level = ['easy','normal','hard'].includes(q.get('level')) ? q.get('level') : 'normal';
-  flip = (humanColor === WHITE);
+  flip = (humanColor === WHITE); placeScale();
   let sfen = START_SFEN;
   try { const s = q.get('sfen'); if (s){ parseSfen(s); sfen = s; } }
   catch { sfen = START_SFEN; }
