@@ -22,10 +22,15 @@
   #turn{color:var(--ink)} #turn.check{color:#e0653f}
   #info{color:var(--dim);font-size:11px;text-align:right;overflow:hidden;
     text-overflow:ellipsis;white-space:nowrap}
-  /* 棋譜。上部の空（空き領域）に薄く。地面や兵を邪魔しないよう半透明＋pointer-events:none */
-  #kifu{position:absolute;top:30px;left:12px;pointer-events:none;white-space:pre;
-    font:11px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-    color:rgba(24,20,12,.5)}
+  /* 戦闘ログ。直近2行だけを持ち駒の上に出し、押すと全履歴のシートを開く。
+     行の高さを固定して、空でも1行でも枠の高さが変わらないようにする。 */
+  #log{border:1px solid var(--line);border-radius:3px;padding:5px 8px;margin-bottom:9px;
+    font-size:11px;line-height:1.55;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  #log div{height:1.55em;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+  #log .old{color:var(--dim)} #log .new{color:var(--ink)}
+  #logList{max-height:40vh;overflow-y:auto;text-align:left;font-size:12px;line-height:1.6;
+    margin-bottom:10px;color:var(--ink)}
+  #logClose{width:100%}
 
   /* 下部の自分の持ち駒。盤上と同じ兵の姿に、足元へ小さく漢字を添える。
      敵の持ち駒は 3D 空間（奥の地面）に出すので、上部の帯は置かない。 */
@@ -84,9 +89,9 @@
 <div id="app">
   <div id="view">
     <div id="status"><span id="turn">読み込み中…</span><span id="info"></span></div>
-    <div id="kifu"></div>
   </div>
   <div id="panel">
+    <div id="log"><div class="old"></div><div class="new"></div></div>
     <div class="myhand" id="handBottom"></div>
     <div class="controls">
       <div class="grp">
@@ -103,6 +108,12 @@
   <p class="legend">押すと、その場合に行ける先が盤に出ます</p>
   <div class="rowb"><button id="promoYes">進化する</button><button id="promoNo">進化しない</button></div>
   <button id="promoGo" class="primary" disabled>この手で指す</button>
+</div></div>
+
+<div class="overlay sheet" id="logOv"><div class="card">
+  <p>戦闘ログ</p>
+  <div id="logList"></div>
+  <button id="logClose" class="primary">閉じる</button>
 </div></div>
 
 <div class="overlay" id="resultOv"><div class="card">
@@ -143,15 +154,27 @@ KIFU_NAME[8]='と';KIFU_NAME[9]='成香';KIFU_NAME[10]='成桂';KIFU_NAME[11]='�
    他5種は棋譜表記と一致する。表示名は後で全面的に差し替えるのでここ1か所に置く。 */
 const SHEET_NAME = KIFU_NAME.slice(); SHEET_NAME[TO] = 'と金';
 
-/* 指す直前の局面 p と指し手 mv から日本式の棋譜1行を作る（表現層の処理）。
-   駒種・移動元・成りは、着手前の局面と指し手だけから取れる。 */
-function kifuLine(p, mv){
-  const to = moveTo(mv), mark = p.turn === BLACK ? '▲' : '△';
+/* 戦闘ログの駒名。兵の姿に合わせた呼び名で、進化した駒は「歩兵（進化）」と付ける。 */
+const LOG_NAME = ['歩兵','槍兵','忍者','侍','近衛兵','僧兵','鉄砲兵','大将'];
+const logName = t => LOG_NAME[baseOf(t)] + (t === baseOf(t) ? '' : '（進化）');
+/* 指す直前の局面 p と指し手 mv から戦闘ログの1文を作る（表現層の処理。王手は
+   指した後の局面で分かるので、呼び出し側が文末に足す）。人間側が「味方」。
+   前後は指した側から見る。敵の歩兵が手前へ来るのも、その兵にとっては「進む」。 */
+function logLine(p, mv){
+  const to = moveTo(mv), side = p.turn === humanColor ? '味方' : '敵';
   const dest = (9 - col(to)) + RANK_KANJI[row(to)];
-  if (isDrop(mv)) return `${p.ply}.${mark}${dest}${KIFU_NAME[dropType(mv)]}打`;
+  if (isDrop(mv)) return `${side}が${dest}へ${logName(dropType(mv))}を投入`;
   const from = moveFrom(mv), t = typeOf(p.board[from]);
-  const name = movePro(mv) ? KIFU_NAME[baseOf(t)] + '成' : KIFU_NAME[t];
-  return `${p.ply}.${mark}${dest}${name}(${9 - col(from)}${row(from) + 1})`;
+  const other = side === '味方' ? '敵' : '味方';
+  let s;
+  if (p.board[to] !== EMPTY){
+    s = `${side}の${logName(t)}が${dest}の${other}の${logName(typeOf(p.board[to]))}を討つ`;
+  } else {
+    const ahead = (row(to) - row(from)) * (p.turn === BLACK ? -1 : 1);   // 指した側から見た前進量
+    const verb = t === KE ? '跳ぶ' : ahead > 0 ? '進む' : ahead < 0 ? '下がる' : '移る';
+    s = `${side}の${logName(t)}が${dest}へ${verb}`;
+  }
+  return movePro(mv) ? s + '、進化' : s;
 }
 
 /* ═════════ 3D 定数（lab/idle-test.html を流用） ═════════ */
@@ -934,7 +957,7 @@ let pos, humanColor, level;
 let legal = [], selected = null, targets = new Map();
 let lastMove = null, thinking = false, over = false, pendingPromo = null, promoReach = null, promoReachNo = null;
 let promoPick = null;                    // 'yes' | 'no' | null（未選択）
-let kifu = [];                           // 棋譜（表現層。直近10手を上部に表示）
+let logLines = [];                       // 戦闘ログ（表現層。直近2行を下部に、全部をシートに）
 let anim = null;                         // {from,to,moverColor,cap,capColor,capType,kind,t,dur,resolve}
 let sceneDirty = true, hlDirty = true;
 
@@ -1004,11 +1027,13 @@ function commitMove(mv){
   const cap = !isDrop(mv) && pos.board[to] !== EMPTY;
   const capColor = cap ? colorOf(pos.board[to]) : -1;
   const capType  = cap ? typeOf(pos.board[to]) : -1;
-  kifu.push(kifuLine(pos, mv));           // 着手前の局面から棋譜を作る
+  let line = logLine(pos, mv);            // 着手前の局面から文を作る
   doMove(pos, mv);
+  if (inCheck(pos)) line += '。大将に迫る';
+  logLines.push(line);
   npc.moved(toSfen(pos));
   lastMove = { from, to, color: moverColor };
-  renderHands(); renderKifu();
+  renderHands(); renderLog();
   const kind = isDrop(mv) ? 'drop' : (cap ? 'capture' : 'move');
   const dur = kind === 'drop' ? 0.28 : (kind === 'capture' ? 0.80 : 0.32);
   return new Promise(res => {
@@ -1092,8 +1117,19 @@ function showResult(big, sub){
   $('resultOv').classList.add('on');
   turnEl.textContent = big; turnEl.classList.remove('check');
 }
-/* 直近10手を古い順（最新が下）に上部へ出す。半透明・pointer-events:none。 */
-function renderKifu(){ $('kifu').textContent = kifu.slice(-10).join('\n'); }
+/* 直近2行を下部の枠へ（最新が下）。全履歴は枠を押したときのシートに出す。 */
+function renderLog(){
+  const n = logLines.length;
+  $('log').querySelector('.old').textContent = n > 1 ? logLines[n-2] : '';
+  $('log').querySelector('.new').textContent = n > 0 ? logLines[n-1] : '';
+}
+$('log').addEventListener('click', () => {
+  const list = $('logList'); list.innerHTML = '';
+  for (const s of logLines){ const d = document.createElement('div'); d.textContent = s; list.appendChild(d); }
+  $('logOv').classList.add('on');
+  list.scrollTop = list.scrollHeight;                   // 開いたとき最新行が見える位置に
+});
+$('logClose').addEventListener('click', () => $('logOv').classList.remove('on'));
 
 /* ═════════ 入力 ═════════ */
 const raycaster = new THREE.Raycaster();
@@ -1232,11 +1268,11 @@ function newGame(){
   pos = parseSfen(sfen);
   legal = []; clearSelection(); lastMove = null;
   thinking = false; over = false; pendingPromo = null; anim = null;
-  kifu = [];
+  logLines = [];
   $('resultOv').classList.remove('on'); closePromo();
   infoEl.textContent = '';
   npc.newGame();
-  renderHands(); renderStatus(); renderKifu();
+  renderHands(); renderStatus(); renderLog();
   sceneDirty = true; hlDirty = true;
   if (pos.turn === humanColor){ legal = legalMoves(pos); renderStatus(); hlDirty = true; }
   else scheduleNpc();
