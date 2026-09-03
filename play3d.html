@@ -17,9 +17,8 @@
 
   /* 手番の行。下部パネルの最上段。右端は退避手の表示。 */
   #turnRow{display:flex;justify-content:space-between;gap:10px;font-size:12px;margin-bottom:6px}
-  #turn{color:var(--ink)} #turn.check{color:#e0653f}
-  #info{color:var(--dim);font-size:11px;text-align:right;overflow:hidden;
-    text-overflow:ellipsis;white-space:nowrap}
+  #turn{color:var(--ink);white-space:nowrap} #turn.check{color:#e0653f}
+  #info{color:var(--dim);font-size:11px;text-align:right}   /* 長い知らせは折り返して全文を出す */
   /* 戦闘ログ。直近5行だけを持ち駒の上に出し、押すと全履歴のシートを開く。
      行の高さを固定して、空でも1行でも枠の高さが変わらないようにする。 */
   #log{border:1px solid var(--line);border-radius:3px;padding:5px 8px;margin-bottom:9px;
