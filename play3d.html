@@ -3,7 +3,6 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>将棋 — 人間 対 NPC（3D）</title>
 <style>
   :root{ --ink:#e8e3d8; --dim:#8b8578; --line:rgba(232,227,216,.16);
          --hit:#c9a227; --bg:#0c0d0b; --panel:#111210; }
@@ -91,8 +90,8 @@
     <div class="myhand" id="handBottom"></div>
     <div class="controls">
       <div class="grp">
-        <button class="primary" id="newGame">新規対局</button>
-        <button class="ghost" id="resign">投了</button>
+        <button class="primary" id="newGame">新しい対戦</button>
+        <button class="ghost" id="resign">降参</button>
         <button class="ghost" id="reset" title="ズームを解除して等倍に戻す" hidden>ズーム解除</button>
       </div>
     </div>
@@ -101,9 +100,9 @@
 
 <div class="overlay sheet" id="promoOv"><div class="card">
   <p>進化させますか？</p>
-  <p class="legend">押すと、その場合に行ける先が盤に出ます</p>
+  <p class="legend">押すと、その場合に行ける先が戦場に出ます</p>
   <div class="rowb"><button id="promoYes">進化する</button><button id="promoNo">進化しない</button></div>
-  <button id="promoGo" class="primary" disabled>この手で指す</button>
+  <button id="promoGo" class="primary" disabled>この行動で進む</button>
 </div></div>
 
 <div class="overlay sheet" id="logOv"><div class="card">
@@ -131,11 +130,13 @@ import {
   BLACK, WHITE, EMPTY, FU, KY, KE, GI, KI, KA, HI, TO, NY, NK, NG, UM, RY,
 } from './src/shogi.js';
 import { Npc } from './src/npc.js';
+import { GAME_NAME } from './src/name.js';
+document.title = GAME_NAME;
 
 /* ═════════ ルール層まわりの表記（play.html と共通） ═════════ */
 const KANJI = [];
-KANJI[0]='歩';KANJI[1]='香';KANJI[2]='桂';KANJI[3]='銀';KANJI[4]='金';
-KANJI[5]='角';KANJI[6]='飛';KANJI[7]='玉';
+KANJI[0]='歩';KANJI[1]='槍';KANJI[2]='忍';KANJI[3]='侍';KANJI[4]='衛';
+KANJI[5]='僧';KANJI[6]='砲';KANJI[7]='玉';
 KANJI[8]='と';KANJI[9]='杏';KANJI[10]='圭';KANJI[11]='全';KANJI[13]='馬';KANJI[14]='龍';
 const HAND_ORDER = [HI, KA, KI, GI, KE, KY, FU];
 
@@ -1058,14 +1059,14 @@ async function scheduleNpc(){
     fallback = !!res.fallback;
     console.log(`NPC: ${usi} worker d${res.depth ?? '?'} ${res.ms ?? '?'}ms${fallback ? ' 退避手' : ''}`);
   } else {
-    if (legalNow.length === 0){ over = true; showResult('あなたの勝ち', 'NPC は指す手がありません'); return; }
+    if (legalNow.length === 0){ over = true; showResult('あなたの勝ち', '敵軍に動ける兵がない'); return; }
     usi = moveToUsi(legalNow[Math.floor(Math.random()*legalNow.length)]); fallback = true;
     console.log(`NPC: ${usi} 退避手（worker が指し手を返せなかった）`);
   }
   await commitMove(usiToMove(usi));
   // 退避手が2手続いたら worker が答えられていないと見て知らせる。1手なら出さない。
   fallbackRun = fallback ? fallbackRun + 1 : 0;
-  infoEl.textContent = fallbackRun >= 2 ? '対戦相手の調子が悪いようです。新規対局をお試しください' : '';
+  infoEl.textContent = fallbackRun >= 2 ? '対戦相手の調子が悪いようです。新しい対戦をお試しください' : '';
   if (checkTerminalAfterMove('NPC')) return;
   legal = legalMoves(pos); hlDirty = true; renderStatus();
 }
@@ -1074,16 +1075,18 @@ async function scheduleNpc(){
 function checkTerminalAfterMove(mover){
   if (legalMoves(pos).length === 0){
     over = true; hlDirty = true;
-    const how = inCheck(pos) ? '詰み' : '手詰まり';
-    showResult(mover === 'あなた' ? 'あなたの勝ち' : 'あなたの負け', `${mover}の勝ち（${how}）`);
+    const mate = inCheck(pos);
+    showResult(mover === 'あなた' ? 'あなたの勝ち' : 'あなたの負け',
+               mover === 'あなた' ? (mate ? '敵の大将を追い詰めた' : '敵軍に動ける兵がない')
+                                 : (mate ? '大将を追い詰められた' : '自軍に動ける兵がない'));
     return true;
   }
   const rep = repetition(repKeys, repChecks);
   if (rep !== null){
     over = true; hlDirty = true;
-    if (rep === 'draw') showResult('引き分け', '同じ局面が4回くり返されたため（千日手）');
+    if (rep === 'draw') showResult('引き分け', '同じ配置が4回くり返されたため');
     else showResult(rep === humanColor ? 'あなたの負け' : 'あなたの勝ち',
-                    `${rep === humanColor ? 'NPC' : 'あなた'}の勝ち。同じ局面のくり返し（千日手・連続王手）`);
+                    rep === humanColor ? '大将に迫り続けたため、あなたの負け' : '敵軍が大将に迫り続けたため、あなたの勝ち');
     return true;
   }
   renderStatus(); return false;
@@ -1097,9 +1100,9 @@ function renderStatus(){
   if (!thinking && !anim && pos.turn === humanColor && selected){
     t += `・${logName(selected.kind === 'board' ? typeOf(pos.board[selected.sq]) : selected.pt)}`;
   }
-  if (checkSide >= 0 && !anim) t += '（王手）';
+  if (checkSide >= 0 && !anim) t += '・大将が危ない';
   // 王手中に、動かせる手のない駒を選んだら、その駒では受けられないことを知らせる
-  if (checkSide === humanColor && selected && targets.size === 0 && !anim) t = 'この駒では大将を守れません';
+  if (checkSide === humanColor && selected && targets.size === 0 && !anim) t = 'この兵では大将を守れません';
   turnEl.textContent = t;
   turnEl.classList.toggle('check', checkSide >= 0 && !anim);
 }
@@ -1258,7 +1261,7 @@ $('resultTitle').addEventListener('click', () => { location.href = './index.html
 $('resign').addEventListener('click', () => {
   if (over) return; over = true; thinking = false; hlDirty = true;
   closePromo();                                 // 成り確認の途中で投了しても盤の表示と選択を残さない
-  showResult('あなたの負け', 'あなたの投了');
+  showResult('あなたの負け', 'あなたの降参');
 });
 $('newGame').addEventListener('click', newGame);
 $('reset').addEventListener('click', () => { zoom = 1; panX = 0; panY = 0; applyView(); });

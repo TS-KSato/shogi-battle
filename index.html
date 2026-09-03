@@ -3,7 +3,6 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>将棋 — 人間 対 NPC</title>
 <style>
   :root{ --ink:#e8e3d8; --dim:#8b8578; --line:rgba(232,227,216,.16);
          --hit:#c9a227; --bg:#0c0d0b; --panel:#111210; }
@@ -34,14 +33,14 @@
 </head>
 <body>
 <main>
-  <h1>将棋</h1>
-  <p class="lead">盤の上の駒ではなく、野に並ぶ兵として指す。</p>
+  <h1 id="title"></h1>
+  <p class="lead">兵を率いて、敵の大将を追い詰めろ。</p>
 
   <div class="row">
-    <label for="side">手番</label>
+    <label for="side">順番</label>
     <select id="side">
-      <option value="0" selected>先手（手前）</option>
-      <option value="1">後手（奥）</option>
+      <option value="0" selected>先攻（手前）</option>
+      <option value="1">後攻（奥）</option>
     </select>
   </div>
   <div class="row">
@@ -52,10 +51,13 @@
       <option value="hard">つよい</option>
     </select>
   </div>
-  <button id="start">対局する</button>
+  <button id="start">出陣する</button>
 </main>
 
-<script>
+<script type="module">
+import { GAME_NAME } from './src/name.js';
+document.title = GAME_NAME;
+document.getElementById('title').textContent = GAME_NAME;
 document.getElementById('start').addEventListener('click', () => {
   const side = document.getElementById('side').value;
   const level = document.getElementById('level').value;
