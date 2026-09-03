@@ -94,7 +94,7 @@
       <div class="grp">
         <button class="primary" id="newGame">新規対局</button>
         <button class="ghost" id="resign">投了</button>
-        <button class="ghost" id="reset" title="拡大を等倍に戻す">等倍</button>
+        <button class="ghost" id="reset" title="ズームを解除して等倍に戻す" hidden>ズーム解除</button>
       </div>
     </div>
   </div>
@@ -879,6 +879,7 @@ function applyView(){
   e[8] = -lensX * zoom - panX;                 // レンズシフト（左寄せ）＋横のずらし
   e[9] = LENS * zoom - panY;                   // レンズシフト（下寄せ）＋縦のずらし
   camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
+  $('reset').hidden = zoom <= 1;               // zoom の変更は全てここを通るので、解除ボタンの表示もここで
 }
 /* pan を等倍で見えていた範囲の内側に制限する。等倍のNDC[-1,1]は盤・持ち駒・空を
    ちょうど収めた画（レンズシフト込み）。ndc'=zoom·ndc0+pan の ndc0 を [-1,1] に収める
@@ -952,6 +953,7 @@ addEventListener('resize', () => { resize(); });
 const $ = id => document.getElementById(id);
 const turnEl = $('turn'), infoEl = $('info');
 const npc = new Npc();
+let fallbackRun = 0;                     // NPC の退避手が何手続いているか
 let pos, humanColor, level;
 let legal = [], selected = null, targets = new Map();
 let lastMove = null, thinking = false, over = false, pendingPromo = null, promoReach = null, promoReachNo = null;
@@ -1068,8 +1070,9 @@ async function scheduleNpc(){
     console.log(`NPC: ${usi} 退避手（worker が指し手を返せなかった）`);
   }
   await commitMove(usiToMove(usi));
-  // 退避手のときだけ画面に残す。worker が答えられていないことに気づける必要がある。
-  infoEl.textContent = fallback ? 'NPC: 退避手' : '';
+  // 退避手が2手続いたら worker が答えられていないと見て知らせる。1手なら出さない。
+  fallbackRun = fallback ? fallbackRun + 1 : 0;
+  infoEl.textContent = fallbackRun >= 2 ? '対戦相手の調子が悪いようです。新規対局をお試しください' : '';
   if (checkTerminalAfterMove('NPC')) return;
   legal = legalMoves(pos); hlDirty = true; renderStatus();
 }
@@ -1270,7 +1273,7 @@ function newGame(){
   thinking = false; over = false; pendingPromo = null; anim = null;
   logLines = [];
   $('resultOv').classList.remove('on'); closePromo();
-  infoEl.textContent = '';
+  fallbackRun = 0; infoEl.textContent = '';
   npc.newGame();
   renderHands(); renderStatus(); renderLog();
   sceneDirty = true; hlDirty = true;
