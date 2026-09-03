@@ -177,7 +177,7 @@ import {
   START_SFEN, parseSfen, toSfen, legalMoves,
   doMove, moveToUsi, usiToMove,
   moveTo, moveFrom, isDrop, dropType,
-  colorOf, typeOf, isProm, col, row, inCheck,
+  colorOf, typeOf, isProm, col, row, inCheck, positionKey, repetition,
   BLACK, WHITE, EMPTY,
   FU, KY, KE, GI, KI, KA, HI,
 } from './src/shogi.js';
@@ -347,11 +347,13 @@ function chooseTarget(to){
   $('promoOv').classList.add('on');
 }
 let pendingPromo = null;
+let repKeys = [], repChecks = [];        // 千日手の照合用。開始局面から毎手の局面キーと王手の有無
+function recordPosition(){ repKeys.push(positionKey(pos)); repChecks.push(inCheck(pos)); }
 
 function applyHumanMove(mv){
   clearSelection();
   const from = isDrop(mv) ? -1 : moveFrom(mv);
-  doMove(pos, mv);
+  doMove(pos, mv); recordPosition();
   lastMove = { from, to: moveTo(mv) };
   const sfen = toSfen(pos);
   npc.moved(sfen);
@@ -390,7 +392,7 @@ async function scheduleNpc(){
 
   const mv = usiToMove(usi);
   const from = isDrop(mv) ? -1 : moveFrom(mv);
-  doMove(pos, mv);
+  doMove(pos, mv); recordPosition();
   lastMove = { from, to: moveTo(mv) };
   npc.moved(toSfen(pos));
   infoEl.textContent = `NPC: ${usi}（${note}）`;
@@ -401,17 +403,28 @@ async function scheduleNpc(){
   render();
 }
 
-/* 直前に mover が指した後、手番側に合法手が無ければ決着。 */
+/* 直前に mover が指した後、手番側に合法手が無ければ決着。千日手も見る。 */
 function checkTerminalAfterMove(mover){
   const next = legalMoves(pos);
-  if (next.length > 0){ render(); return false; }
-  over = true;
-  render();
-  const checked = inCheck(pos);
-  const winnerIsHuman = (mover === 'あなた');
-  const how = checked ? '詰み' : '手詰まり';
-  showResult(winnerIsHuman ? 'あなたの勝ち' : 'あなたの負け', `${mover}の勝ち（${how}）`);
-  return true;
+  if (next.length === 0){
+    over = true;
+    render();
+    const checked = inCheck(pos);
+    const winnerIsHuman = (mover === 'あなた');
+    const how = checked ? '詰み' : '手詰まり';
+    showResult(winnerIsHuman ? 'あなたの勝ち' : 'あなたの負け', `${mover}の勝ち（${how}）`);
+    return true;
+  }
+  const rep = repetition(repKeys, repChecks);
+  if (rep !== null){
+    over = true;
+    render();
+    if (rep === 'draw') showResult('引き分け', '千日手');
+    else showResult(rep === humanColor ? 'あなたの負け' : 'あなたの勝ち',
+                    `${rep === humanColor ? 'NPC' : 'あなた'}の勝ち（千日手（連続王手））`);
+    return true;
+  }
+  render(); return false;
 }
 
 /* ───────── 結果表示 ───────── */
@@ -483,6 +496,7 @@ function newGame(){
   pos = parseSfen(sfen);
   legal = []; clearSelection(); lastMove = null;
   thinking = false; over = false; pendingPromo = null;
+  repKeys = [positionKey(pos)]; repChecks = [inCheck(pos)];
   $('resultOv').classList.remove('on');
   $('promoOv').classList.remove('on');
   infoEl.textContent = '';

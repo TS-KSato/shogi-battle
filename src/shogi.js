@@ -380,6 +380,28 @@ export function hasLegalMove(pos, checkUchifu = true){
 
 export const isMate = pos => inCheck(pos) && !hasLegalMove(pos);
 
+/* ───────── 千日手 ───────── */
+
+/* 千日手の照合に使う局面のキー。盤・手番・持ち駒が同じなら同一局面（手数は見ない）。 */
+export const positionKey = pos => toSfen(pos).replace(/ \d+$/, '');
+
+/* keys[i] は i 手目を指した後の局面のキー（keys[0] は開始局面）、checks[i] はその局面で
+   手番側が王手されているか。最後の局面が4回目の出現なら千日手。最初の出現から最後までの
+   間、一方の手が全て王手なら、その側（王手を続けた側）の負け。
+   戻り値は null（未成立）／'draw'（引き分け）／負けとなる側の色。 */
+export function repetition(keys, checks){
+  const n = keys.length - 1, last = keys[n];
+  let first = -1, count = 0;
+  for (let i = 0; i <= n; i++) if (keys[i] === last){ count++; if (first < 0) first = i; }
+  if (count < 4) return null;
+  const toMove = last.split(' ')[1] === 'b' ? BLACK : WHITE;
+  // 局面 j の王手は j 手目を指した側がかけたもの。first の手番側は first+1, first+3, … を指す。
+  const allChecks = start => { for (let j = start; j <= n; j += 2) if (!checks[j]) return false; return true; };
+  if (allChecks(first + 1)) return toMove;
+  if (allChecks(first + 2)) return 1 - toMove;
+  return 'draw';
+}
+
 /* ───────── 検証用 ───────── */
 
 export function perft(pos, depth){

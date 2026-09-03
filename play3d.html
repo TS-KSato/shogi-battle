@@ -127,7 +127,7 @@ import {
   START_SFEN, parseSfen, toSfen, legalMoves, clone,
   doMove, moveToUsi, usiToMove,
   moveTo, moveFrom, movePro, isDrop, dropType,
-  colorOf, typeOf, baseOf, col, row, inCheck,
+  colorOf, typeOf, baseOf, col, row, inCheck, positionKey, repetition,
   BLACK, WHITE, EMPTY, FU, KY, KE, GI, KI, KA, HI, TO, NY, NK, NG, UM, RY,
 } from './src/shogi.js';
 import { Npc } from './src/npc.js';
@@ -958,6 +958,7 @@ let legal = [], selected = null, targets = new Map();
 let lastMove = null, thinking = false, over = false, pendingPromo = null, promoReach = null, promoReachNo = null;
 let promoPick = null;                    // 'yes' | 'no' | null（未選択）
 let logLines = [];                       // 戦闘ログ（表現層。直近2行を下部に、全部をシートに）
+let repKeys = [], repChecks = [];        // 千日手の照合用。開始局面から毎手の局面キーと王手の有無
 let anim = null;                         // {from,to,moverColor,cap,capColor,capType,kind,t,dur,resolve}
 let sceneDirty = true, hlDirty = true;
 
@@ -1031,6 +1032,7 @@ function commitMove(mv){
   doMove(pos, mv);
   if (inCheck(pos)) line += '。大将に迫る';
   logLines.push(line);
+  repKeys.push(positionKey(pos)); repChecks.push(inCheck(pos));
   npc.moved(toSfen(pos));
   lastMove = { from, to, color: moverColor };
   renderHands(); renderLog();
@@ -1078,11 +1080,21 @@ async function scheduleNpc(){
 
 /* ─ 決着（合法手が無ければ手番側の負け。判定はルール層のみ） ─ */
 function checkTerminalAfterMove(mover){
-  if (legalMoves(pos).length > 0){ renderStatus(); return false; }
-  over = true; hlDirty = true;
-  const how = inCheck(pos) ? '詰み' : '手詰まり';
-  showResult(mover === 'あなた' ? 'あなたの勝ち' : 'あなたの負け', `${mover}の勝ち（${how}）`);
-  return true;
+  if (legalMoves(pos).length === 0){
+    over = true; hlDirty = true;
+    const how = inCheck(pos) ? '詰み' : '手詰まり';
+    showResult(mover === 'あなた' ? 'あなたの勝ち' : 'あなたの負け', `${mover}の勝ち（${how}）`);
+    return true;
+  }
+  const rep = repetition(repKeys, repChecks);
+  if (rep !== null){
+    over = true; hlDirty = true;
+    if (rep === 'draw') showResult('引き分け', '千日手');
+    else showResult(rep === humanColor ? 'あなたの負け' : 'あなたの勝ち',
+                    `${rep === humanColor ? 'NPC' : 'あなた'}の勝ち（千日手（連続王手））`);
+    return true;
+  }
+  renderStatus(); return false;
 }
 
 /* ═════════ 画面表示 ═════════ */
@@ -1271,6 +1283,7 @@ function newGame(){
   legal = []; clearSelection(); lastMove = null;
   thinking = false; over = false; pendingPromo = null; anim = null;
   logLines = [];
+  repKeys = [positionKey(pos)]; repChecks = [inCheck(pos)];
   $('resultOv').classList.remove('on'); closePromo();
   fallbackRun = 0; infoEl.textContent = '';
   npc.newGame();

@@ -150,6 +150,28 @@ console.log('\n着手と取消');
   ok('  3手先まで完全に復元', bad, 0);
 }
 
+/* ───────── 10. 千日手 ─────────
+   手を進めながら局面のキーと王手の有無を積み、repetition に渡す。 */
+
+console.log('\n千日手');
+{
+  // 同じ手順を繰り返して開始局面に戻す。局面の出現回数 = 1 + 繰り返し回数。
+  const play = (sfen, cycle, times) => {
+    const p = S.parseSfen(sfen);
+    const keys = [S.positionKey(p)], checks = [S.inCheck(p)];
+    for (let t = 0; t < times; t++)
+      for (const u of cycle){ S.doMove(p, S.usiToMove(u)); keys.push(S.positionKey(p)); checks.push(S.inCheck(p)); }
+    return S.repetition(keys, checks);
+  };
+  const shuffle = ['2h3h', '8b7b', '3h2h', '7b8b'];                 // 飛車を往復させるだけ。王手なし
+  ok('  同一局面が3回では成立しない', play(S.START_SFEN, shuffle, 2), null);
+  ok('  同一局面が4回で引き分け', play(S.START_SFEN, shuffle, 3), 'draw');
+  // 先手の飛車が王手を続け、後手玉が 9a と 8a を往復する。先手の手は全て王手。
+  const perpetual = ['8i9i', '9a8a', '9i8i', '8a9a'];
+  ok('  王手を続けた側（先手）の負け', play('k8/9/9/9/9/9/9/9/1R6K b - 1', perpetual, 3), S.BLACK);
+  ok('  王手を続けても3回では成立しない', play('k8/9/9/9/9/9/9/9/1R6K b - 1', perpetual, 2), null);
+}
+
 /* ───────── 結果 ───────── */
 
 console.log(`\n${fail === 0 ? '全て通過' : '失敗あり'} — ${pass} 件成功 / ${fail} 件失敗`);
