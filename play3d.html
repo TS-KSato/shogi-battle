@@ -117,7 +117,7 @@
   <div class="rowb"><button id="resultClose" class="primary">閉じる</button><button id="resultTitle">タイトルへ</button></div>
 </div></div>
 
-<!-- 盤面の描画は lab/idle-test.html と同じ Three.js。GitHub Pages では CDN 直リンクで届く。 -->
+<!-- Three.js r128。GitHub Pages では CDN 直リンクで届く。 -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <!-- スキン付きGLBの読み込みと複製に使う。届かなければ骨なしGLBへ退避する。 -->
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
@@ -165,7 +165,7 @@ function logLine(p, mv){
   return movePro(mv) ? s + '、進化' : s;
 }
 
-/* ═════════ 3D 定数（lab/idle-test.html を流用） ═════════ */
+/* ═════════ 3D 定数 ═════════ */
 const N = 9, SQ = 1.0, CHAR_H = 0.79, BASE = 0.70 / CHAR_H;
 const TILT = 35 * Math.PI / 180;   // 俯角35度固定。横から見て駒の姿を見せる
 const LENS = 0.42;                 // 上下のレンズシフト。盤を下へ寄せ、空きを上（空）へ集める
