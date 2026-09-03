@@ -1093,7 +1093,7 @@ function checkTerminalAfterMove(mover){
 function renderStatus(){
   if (over) return;
   const checkSide = inCheck(pos) ? pos.turn : -1;
-  let t = thinking ? '敵軍の番…' : (anim ? '…' : (pos.turn === humanColor ? '自軍の番' : '敵軍の番'));
+  let t = thinking ? '敵軍の行動…' : (anim ? '…' : (pos.turn === humanColor ? '自軍の行動' : '敵軍の行動'));
   if (!thinking && !anim && pos.turn === humanColor && selected){
     t += `・${logName(selected.kind === 'board' ? typeOf(pos.board[selected.sq]) : selected.pt)}`;
   }
