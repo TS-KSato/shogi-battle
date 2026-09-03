@@ -813,22 +813,21 @@ function victimEntry(){
            type: a.capType, jitter: jitterBySq[a.to], mx, my, mz };
 }
 
-/* 持ち駒を盤の外の地面に立たせる。手前(near)＝自陣、奥＝敵陣。マス目は作らず、
+/* 敵の持ち駒を盤の奥の地面に立たせる（自分の持ち駒は下部パネルだけ）。マス目は作らず、
    種類ごとにまとめて横に並べ、あふれたら盤から離れる向きへ列を足す。 */
-function addHandEntries(list, color, near){
+function addHandEntries(list, color){
   const hand = pos.hands[color];
   let total = 0; for (const t of HAND_ORDER) total += hand[t];
   if (!total) return;
   const perRow = 10, dx = 0.8, dz = 0.85;
-  const ry = near ? Math.PI : 0, zdir = near ? 1 : -1;   // 盤上と同じ向き（自=奥向き、敵=手前向き）
-  const z0 = near ? (N*SQ)/2 + 2.3 : -((N*SQ)/2 + 0.8);   // 手前は筋の目盛り（z=4.8）の外に置く
+  const z0 = -((N*SQ)/2 + 0.8);
   let i = 0;
   for (const t of HAND_ORDER){
     for (let c = 0; c < hand[t]; c++, i++){
       const rowN = Math.floor(i / perRow), colN = i - rowN*perRow;
       const inRow = Math.min(perRow, total - rowN*perRow);
-      list.push({ x: (colN - (inRow-1)/2) * dx, y: 0, z: z0 + zdir*rowN*dz,
-        rx:0, ry, rz:0, type: t, jitter: jitterHand[i % MAXI], mx:1, my:1, mz:1 });
+      list.push({ x: (colN - (inRow-1)/2) * dx, y: 0, z: z0 - rowN*dz,
+        rx:0, ry:0, rz:0, type: t, jitter: jitterHand[i % MAXI], mx:1, my:1, mz:1 });   // 盤上の敵と同じ手前向き
     }
   }
 }
@@ -852,8 +851,7 @@ function layout(){
   }
   // 取られた駒は盤から消えているので幟も出ない（つぶれる演出には参加しない）。
   if (anim && anim.cap) listFor(anim.capColor).push(victimEntry());
-  addHandEntries(human, humanColor, true);          // 自分の持ち駒＝手前の地面
-  addHandEntries(opp, 1 - humanColor, false);       // 敵の持ち駒＝奥の地面
+  addHandEntries(opp, 1 - humanColor);              // 敵の持ち駒＝奥の地面
   if (skinned){
     applyTeamSkinned(humanPools, human);
     applyTeamSkinned(oppPools,   opp);
@@ -873,17 +871,18 @@ function layout(){
    拡大・移動してもタップは正しいマスに当たる（俯角も向きも一切変わらない）。 */
 let zoom = 1, panX = 0, panY = 0;             // pan は NDC 単位のずらし量
 let baseE0 = 1, baseE5 = 1;                    // 等倍時の投影スケール（resize で確定）
+let lensX = 0;                                 // 横のレンズシフト（NDC。resize で確定。負＝左寄せ）
 function applyView(){
   const e = camera.projectionMatrix.elements;
   e[0] = baseE0 * zoom;                        // 横スケール
   e[5] = baseE5 * zoom;                        // 縦スケール
-  e[8] = -panX;                                // 横のずらし
+  e[8] = -lensX * zoom - panX;                 // レンズシフト（左寄せ）＋横のずらし
   e[9] = LENS * zoom - panY;                   // レンズシフト（下寄せ）＋縦のずらし
   camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
 }
 /* pan を等倍で見えていた範囲の内側に制限する。等倍のNDC[-1,1]は盤・持ち駒・空を
-   ちょうど収めた画。ndc0=(ndc'+pan)/zoom を [-1,1] に収める条件が |pan|≤zoom-1。
-   これで拡大しても等倍の画の外（盤から離れた地面）へは出ない。 */
+   ちょうど収めた画（レンズシフト込み）。ndc'=zoom·ndc0+pan の ndc0 を [-1,1] に収める
+   条件が |pan|≤zoom-1。これで拡大しても等倍の画の外（盤から離れた地面）へは出ない。 */
 function clampView(){
   zoom = clamp(zoom, 1, 3);
   if (zoom <= 1){ zoom = 1; panX = 0; panY = 0; return; }
@@ -907,7 +906,7 @@ new THREE.TextureLoader().load('./assets/stage/honjin.jpg', tex => {
 /* 陣幕の底を、等倍で盤の奥端から2マス奥（z=-6.5, y=0）が映る画面の高さに合わせ、画面の
    上下左右すべてを絵が覆う最小の倍率にする（cover）。はみ出した分は画面の外に出るだけ。
    板はカメラから D の奥行きに正対しているので、等倍の投影はカメラ座標 (x,y) に対して
-   ndc.x = baseE0·x/D、ndc.y = baseE5·y/D − LENS。 */
+   ndc.x = baseE0·x/D + lensX、ndc.y = baseE5·y/D − LENS。 */
 function fitStage(){
   if (!stage) return;                                          // 絵の読み込み前の resize
   camera.updateMatrixWorld();
@@ -920,7 +919,8 @@ function fitStage(){
   const H = Math.max((yTop - yLine) / STAGE_BASE, (yLine - yBot) / (1 - STAGE_BASE),
                      2 * D / (baseE0 * a));
   stage.scale.set(H * a, H, 1);
-  stage.position.set(0, yLine + H * (STAGE_BASE - 0.5), -D).applyQuaternion(q).add(C);
+  stage.position.set(-lensX * D / baseE0, yLine + H * (STAGE_BASE - 0.5), -D)   // 横は画面の中央（シフト分ずらす）
+    .applyQuaternion(q).add(C);
   stage.quaternion.copy(q);
 }
 
@@ -928,7 +928,9 @@ function fitStage(){
 function resize(){
   const w = view.clientWidth, h = view.clientHeight;
   renderer.setSize(w, h, false); camera.aspect = w / h;
-  const halfW = (N*SQ)/2 / 0.94;                    // 盤の手前の辺を画面幅の 94% に。残りに段の目盛りが入る
+  const FIT = 0.94, EDGE_PX = 2;                    // 盤の手前の辺を画面幅の 94% に、左余白 2px で置く。残りの右余白に段の目盛りが入る
+  const halfW = (N*SQ)/2 / FIT;
+  lensX = 2*EDGE_PX / w - (1 - FIT);               // 左端の余白 (1−FIT)/2 を 2px ぶんまで詰める
   const vFov = camera.fov * Math.PI/180;
   const hFov = 2 * Math.atan(Math.tan(vFov/2) * camera.aspect);
   // 盤は手前へ傾くので、いちばん近い手前端の筋がいちばん広く映る。その手前端の
