@@ -139,29 +139,21 @@ KANJI[5]='角';KANJI[6]='飛';KANJI[7]='玉';
 KANJI[8]='と';KANJI[9]='杏';KANJI[10]='圭';KANJI[11]='全';KANJI[13]='馬';KANJI[14]='龍';
 const HAND_ORDER = [HI, KA, KI, GI, KE, KY, FU];
 
-/* 棋譜用の表記。段は漢数字、駒名は成香・成桂・成銀まで正式名で持つ。 */
+/* 段の表記（戦闘ログの座標と盤の目盛り）。 */
 const RANK_KANJI = ['一','二','三','四','五','六','七','八','九'];
-const KIFU_NAME = [];
-KIFU_NAME[0]='歩';KIFU_NAME[1]='香';KIFU_NAME[2]='桂';KIFU_NAME[3]='銀';KIFU_NAME[4]='金';
-KIFU_NAME[5]='角';KIFU_NAME[6]='飛';KIFU_NAME[7]='玉';
-KIFU_NAME[8]='と';KIFU_NAME[9]='成香';KIFU_NAME[10]='成桂';KIFU_NAME[11]='成銀';KIFU_NAME[13]='馬';KIFU_NAME[14]='龍';
-
-/* 成り確認シートに出す駒名。棋譜の「と」は初心者に通じないので「と金」を出す。
-   他5種は棋譜表記と一致する。表示名は後で全面的に差し替えるのでここ1か所に置く。 */
-const SHEET_NAME = KIFU_NAME.slice(); SHEET_NAME[TO] = 'と金';
 
 /* 戦闘ログの駒名。兵の姿に合わせた呼び名で、進化した駒は「歩兵（進化）」と付ける。 */
 const LOG_NAME = ['歩兵','槍兵','忍者','侍','近衛兵','僧兵','鉄砲兵','大将'];
 const logName = t => LOG_NAME[baseOf(t)] + (t === baseOf(t) ? '' : '（進化）');
 /* 指す直前の局面 p と指し手 mv から戦闘ログの1文を作る（表現層の処理。王手は
-   指した後の局面で分かるので、呼び出し側が文末に足す）。人間側が「味方」。
-   前後は指した側から見る。敵の歩兵が手前へ来るのも、その兵にとっては「進む」。 */
+   指した後の局面で分かるので、呼び出し側が文末に足す）。人間側が「自軍」。
+   前後は指した側から見る。敵軍の歩兵が手前へ来るのも、その兵にとっては「進む」。 */
 function logLine(p, mv){
-  const to = moveTo(mv), side = p.turn === humanColor ? '味方' : '敵';
+  const to = moveTo(mv), side = p.turn === humanColor ? '自軍' : '敵軍';
   const dest = (9 - col(to)) + RANK_KANJI[row(to)];
   if (isDrop(mv)) return `${side}が${dest}へ${logName(dropType(mv))}を投入`;
   const from = moveFrom(mv), t = typeOf(p.board[from]);
-  const other = side === '味方' ? '敵' : '味方';
+  const other = side === '自軍' ? '敵軍' : '自軍';
   let s;
   if (p.board[to] !== EMPTY){
     s = `${side}の${logName(t)}が${dest}の${other}の${logName(typeOf(p.board[to]))}を討つ`;
@@ -997,7 +989,7 @@ function afterMove(mv){
     if (isDrop(m) || moveFrom(m) !== to || moveTo(m) === foeKing) continue;
     reach.set(moveTo(m), p.board[moveTo(m)] !== EMPTY);   // 成り違いで同じ先が2回来るのでMapで畳む
   }
-  return { name: SHEET_NAME[typeOf(p.board[to])], reach };
+  return { reach };
 }
 /* 成り確認を閉じ、選択状態と決定ボタンを初期に戻す。開くときも一度ここを通す。 */
 function closePromo(){
@@ -1015,8 +1007,8 @@ function chooseTarget(to){
   pendingPromo = cand;                                     // 成り／不成の確認
   const yes = afterMove(cand.find(m => movePro(m))), no = afterMove(cand.find(m => !movePro(m)));
   promoReach = yes.reach; promoReachNo = no.reach;         // どちらも「その場合に行ける先の全部」
-  $('promoYes').textContent = `進化する　${yes.name}／行ける先 ${yes.reach.size}か所`;
-  $('promoNo').textContent  = `進化しない　${no.name}／行ける先 ${no.reach.size}か所`;
+  $('promoYes').textContent = `進化する／行ける先 ${yes.reach.size}か所`;
+  $('promoNo').textContent  = `進化しない／行ける先 ${no.reach.size}か所`;
   $('promoOv').classList.add('on');
   hlDirty = true;
 }
@@ -1089,9 +1081,9 @@ function checkTerminalAfterMove(mover){
   const rep = repetition(repKeys, repChecks);
   if (rep !== null){
     over = true; hlDirty = true;
-    if (rep === 'draw') showResult('引き分け', '千日手');
+    if (rep === 'draw') showResult('引き分け', '同じ局面が4回くり返されたため（千日手）');
     else showResult(rep === humanColor ? 'あなたの負け' : 'あなたの勝ち',
-                    `${rep === humanColor ? 'NPC' : 'あなた'}の勝ち（千日手（連続王手））`);
+                    `${rep === humanColor ? 'NPC' : 'あなた'}の勝ち。同じ局面のくり返し（千日手・連続王手）`);
     return true;
   }
   renderStatus(); return false;
@@ -1101,11 +1093,13 @@ function checkTerminalAfterMove(mover){
 function renderStatus(){
   if (over) return;
   const checkSide = inCheck(pos) ? pos.turn : -1;
-  let t = thinking ? '敵の番…' : (anim ? '…' : (pos.turn === humanColor ? '味方の番' : '敵の番'));
+  let t = thinking ? '敵軍の番…' : (anim ? '…' : (pos.turn === humanColor ? '自軍の番' : '敵軍の番'));
   if (!thinking && !anim && pos.turn === humanColor && selected){
     t += `・${logName(selected.kind === 'board' ? typeOf(pos.board[selected.sq]) : selected.pt)}`;
   }
   if (checkSide >= 0 && !anim) t += '（王手）';
+  // 王手中に、動かせる手のない駒を選んだら、その駒では受けられないことを知らせる
+  if (checkSide === humanColor && selected && targets.size === 0 && !anim) t = 'この駒では大将を守れません';
   turnEl.textContent = t;
   turnEl.classList.toggle('check', checkSide >= 0 && !anim);
 }

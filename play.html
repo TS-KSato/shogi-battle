@@ -301,8 +301,10 @@ function renderHand(el, color, mine){
 function renderStatus(checkSide){
   if (over) return;                      // 結果表示中は turnEl を書き換えない
   const my = pos.turn === humanColor;
-  let t = thinking ? 'NPC 考え中…' : (my ? 'あなたの手番' : 'NPC の手番');
+  let t = thinking ? '敵軍の番…' : (my ? '自軍の番' : '敵軍の番');
   if (checkSide >= 0) t += '（王手）';
+  // 王手中に、動かせる手のない駒を選んだら、その駒では受けられないことを知らせる
+  if (checkSide === humanColor && selected && targets.size === 0) t = 'この駒では大将を守れません';
   turnEl.textContent = t;
   turnEl.classList.toggle('check', checkSide >= 0);
 }
@@ -419,9 +421,9 @@ function checkTerminalAfterMove(mover){
   if (rep !== null){
     over = true;
     render();
-    if (rep === 'draw') showResult('引き分け', '千日手');
+    if (rep === 'draw') showResult('引き分け', '同じ局面が4回くり返されたため（千日手）');
     else showResult(rep === humanColor ? 'あなたの負け' : 'あなたの勝ち',
-                    `${rep === humanColor ? 'NPC' : 'あなた'}の勝ち（千日手（連続王手））`);
+                    `${rep === humanColor ? 'NPC' : 'あなた'}の勝ち。同じ局面のくり返し（千日手・連続王手）`);
     return true;
   }
   render(); return false;
