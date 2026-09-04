@@ -5,8 +5,10 @@
  *
  * play3d.html と同じ three.js（CDN の同じ版）・同じ GLB・同じ照明で、俯角35度から
  * 1体ずつ撮る。姿勢は待機アニメの途中。自軍（青）を対局画面と同じ奥向きで。背景は透明。
- * 描画後に透明でない画素の範囲を切り取り、四辺に同じ余白を付けて中央に置く。
  * 近衛兵には幟、進化した鉄砲兵には大砲を、対局画面と同じ位置に添える。
+ *
+ * 枠は全枚 240×280 で共通。カメラの距離と拡大率も全枚で共通にするので、兵の背丈が
+ * 揃っていれば絵の中の見かけの大きさも揃う。各枚は不透明な画素の範囲の中心を枠の中心に置く。
  *
  * 必要なもの：playwright-core と Chromium。playwright-core が別の場所にあるなら
  * NODE_PATH で指す。Chromium の場所は CHROME で指定できる。CDN に届かない環境では
@@ -37,7 +39,9 @@ const ITEMS = [
   { code:'uma',       file:'kaku_blue_promoted.glb',  side:'blue' },
   { code:'ryu',       file:'hisha_blue_promoted.glb', side:'blue', extra:{ file:'taiho.glb', x:0.35*0.7026, z:0 } },
 ];
-const W = 360, H = 420, MARGIN = 12;   // 描画の大きさと、切り取り後の余白（px）
+const RENDER_W = 720, RENDER_H = 840;      // 下描きの大きさ。枠より大きく描いて縮める
+const FRAME_W = 240, FRAME_H = 280;        // 出力の枠。全枚共通
+const MARGIN = 10;                         // いちばん大きい兵と枠のすき間
 
 // リポジトリをそのまま配る小さなサーバー（GLB を相対パスで読むため）
 const TYPES = { '.html':'text/html; charset=utf-8', '.js':'application/javascript', '.glb':'model/gltf-binary' };
@@ -63,25 +67,27 @@ for (const url of [
   'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js',
 ]) await page.addScriptTag({ url });
 
-mkdirSync(OUT, { recursive:true });
-for (const it of ITEMS){
-  const dataUrl = await page.evaluate(async ({ it, W, H, MARGIN }) => {
-    const load = url => new Promise((res, rej) => new THREE.GLTFLoader().load(url, res, undefined, rej));
-    const lambert = src => { const m = new THREE.MeshLambertMaterial({ skinning: true }); if (src.map) m.map = src.map; if (src.color) m.color.copy(src.color); return m; };
-    const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true, preserveDrawingBuffer:true });
-    renderer.setPixelRatio(1); renderer.setSize(W, H, false); renderer.setClearColor(0x000000, 0);
+const shots = await page.evaluate(async ({ items, RENDER_W, RENDER_H, FRAME_W, FRAME_H, MARGIN }) => {
+  const load = url => new Promise((res, rej) => new THREE.GLTFLoader().load(url, res, undefined, rej));
+  const lambert = src => { const m = new THREE.MeshLambertMaterial({ skinning: true }); if (src.map) m.map = src.map; if (src.color) m.color.copy(src.color); return m; };
+  const TILT = 35 * Math.PI/180;
+  const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true, preserveDrawingBuffer:true });
+  renderer.setPixelRatio(1); renderer.setSize(RENDER_W, RENDER_H, false); renderer.setClearColor(0x000000, 0);
+  const cam = new THREE.PerspectiveCamera(34, RENDER_W/RENDER_H, 0.05, 20);
+
+  // 兵ごとに場面を作り、外接箱の8隅を控える
+  const scenes = [];
+  for (const it of items){
     const sc = new THREE.Scene();
-    // play3d.html と同じ照明
-    sc.add(new THREE.HemisphereLight(0xbfd4e8, 0x2a2216, 0.5));
+    sc.add(new THREE.HemisphereLight(0xbfd4e8, 0x2a2216, 0.5));      // play3d.html と同じ照明
     const sun = new THREE.DirectionalLight(0xfff1d6, 1.1); sun.position.set(7, 4.5, 3); sc.add(sun);
     const rim = new THREE.DirectionalLight(0x8fa9d8, 0.4); rim.position.set(-5, 2.5, -6); sc.add(rim);
-
     const g = await load(`./assets/${it.file}`);
     const obj = THREE.SkeletonUtils.clone(g.scene);
     const box = new THREE.Box3();
     obj.traverse(o => { if (o.isSkinnedMesh){ o.material = lambert(o.material); o.frustumCulled = false;
       o.geometry.computeBoundingBox(); box.union(o.geometry.boundingBox); } });
-    obj.rotation.y = it.side === 'blue' ? Math.PI : 0;     // 対局画面と同じ向き（自軍は奥向き）
+    obj.rotation.y = it.side === 'blue' ? Math.PI : 0;               // 対局画面と同じ向き（自軍は奥向き）
     sc.add(obj);
     // 素の姿勢は T ポーズなので、対局画面と同じ待機アニメの姿勢にしてから撮る
     const mixer = new THREE.AnimationMixer(obj);
@@ -93,37 +99,55 @@ for (const it of ITEMS){
       e.scene.position.set(it.extra.x, 0, it.extra.z);
       sc.add(e.scene);
     }
-    // 俯角35度から、箱の8隅が画面に収まる最短の距離で撮る（余白を最小にして兵を大きく）
-    const TILT = 35 * Math.PI/180;
-    const center = box.getCenter(new THREE.Vector3());
     const corners = [];
-    for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) corners.push(new THREE.Vector3(x, y, z));
-    const cam = new THREE.PerspectiveCamera(34, W/H, 0.05, 20);
-    const fits = dist => {
-      cam.position.set(center.x, center.y + dist*Math.sin(TILT), center.z + dist*Math.cos(TILT));
-      cam.lookAt(center); cam.updateMatrixWorld(true);
-      return corners.every(c => { const v = c.clone().project(cam); return Math.abs(v.x) <= 0.96 && Math.abs(v.y) <= 0.96; });
-    };
+    for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z])
+      corners.push(new THREE.Vector3(x, y, z));
+    scenes.push({ it, sc, center: box.getCenter(new THREE.Vector3()), corners });
+  }
+
+  // 全枚で同じ距離から撮る。距離はいちばん遠くから見る必要がある兵に合わせる
+  const place = (s, dist) => {
+    cam.position.set(s.center.x, s.center.y + dist*Math.sin(TILT), s.center.z + dist*Math.cos(TILT));
+    cam.lookAt(s.center); cam.updateMatrixWorld(true);
+  };
+  const fits = (s, dist) => { place(s, dist);
+    return s.corners.every(c => { const v = c.clone().project(cam); return Math.abs(v.x) <= 0.98 && Math.abs(v.y) <= 0.98; }); };
+  let dist = 0;
+  for (const s of scenes){
     let lo = 0.1, hi = 20;
-    for (let i = 0; i < 40; i++){ const mid = (lo + hi) / 2; if (fits(mid)) hi = mid; else lo = mid; }
-    fits(hi);
-    renderer.render(sc, cam);
-    // 透明でない画素の範囲を求め、同じ余白で切り取る
-    const src = document.createElement('canvas'); src.width = W; src.height = H;
-    const g2 = src.getContext('2d'); g2.drawImage(renderer.domElement, 0, 0);
-    const d = g2.getImageData(0, 0, W, H).data;
-    let x0 = W, y0 = H, x1 = -1, y1 = -1;
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (d[(y*W + x)*4 + 3] > 8){
+    for (let i = 0; i < 40; i++){ const mid = (lo + hi) / 2; if (fits(s, mid)) hi = mid; else lo = mid; }
+    dist = Math.max(dist, hi);
+  }
+
+  // 同じ距離で描き、不透明な画素の範囲を切り出す
+  const crops = scenes.map(s => {
+    place(s, dist);
+    renderer.render(s.sc, cam);
+    const src = document.createElement('canvas'); src.width = RENDER_W; src.height = RENDER_H;
+    src.getContext('2d').drawImage(renderer.domElement, 0, 0);
+    const d = src.getContext('2d').getImageData(0, 0, RENDER_W, RENDER_H).data;
+    let x0 = RENDER_W, y0 = RENDER_H, x1 = -1, y1 = -1;
+    for (let y = 0; y < RENDER_H; y++) for (let x = 0; x < RENDER_W; x++) if (d[(y*RENDER_W + x)*4 + 3] > 8){
       if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
-    const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
-    const out = document.createElement('canvas'); out.width = bw + 2*MARGIN; out.height = bh + 2*MARGIN;
-    out.getContext('2d').drawImage(src, x0, y0, bw, bh, MARGIN, MARGIN, bw, bh);
-    const url = out.toDataURL('image/png');
-    renderer.dispose();
-    return url;
-  }, { it, W, H, MARGIN });
-  const buf = Buffer.from(dataUrl.split(',')[1], 'base64');
-  writeFileSync(path.join(OUT, `${it.code}.png`), buf);
-  console.log(`${it.code}.png  ${buf.length} bytes`);
+    return { code: s.it.code, src, x0, y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
+  });
+
+  // いちばん大きい幅・高さが枠に収まる拡大率を1つ決め、全枚に使う
+  const maxW = Math.max(...crops.map(c => c.w)), maxH = Math.max(...crops.map(c => c.h));
+  const scale = Math.min((FRAME_W - 2*MARGIN)/maxW, (FRAME_H - 2*MARGIN)/maxH);
+  return crops.map(c => {
+    const w = c.w * scale, h = c.h * scale;
+    const out = document.createElement('canvas'); out.width = FRAME_W; out.height = FRAME_H;
+    const g2 = out.getContext('2d'); g2.imageSmoothingQuality = 'high';
+    g2.drawImage(c.src, c.x0, c.y0, c.w, c.h, (FRAME_W - w)/2, (FRAME_H - h)/2, w, h);
+    return { code: c.code, url: out.toDataURL('image/png'), w: Math.round(w), h: Math.round(h) };
+  });
+}, { items: ITEMS, RENDER_W, RENDER_H, FRAME_W, FRAME_H, MARGIN });
+
+mkdirSync(OUT, { recursive:true });
+for (const s of shots){
+  const buf = Buffer.from(s.url.split(',')[1], 'base64');
+  writeFileSync(path.join(OUT, `${s.code}.png`), buf);
+  console.log(`${s.code}.png  ${FRAME_W}x${FRAME_H}  兵の占める大きさ ${s.w}x${s.h}  ${buf.length} bytes`);
 }
 await browser.close(); srv.close();

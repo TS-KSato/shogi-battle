@@ -47,7 +47,7 @@
   /* 兵の絵。対局画面と同じモデルを俯角35度で撮ったもの（PNG は透明）。下地は対局画面の
      地面＝舞台絵 assets/stage/honjin.jpg の、陣幕より下の土の平均色。 */
   td.pic{width:1%;white-space:nowrap}
-  td.pic img{height:64px;width:auto;display:block;background:#aa884b;border-radius:6px}
+  td.pic img{width:60px;height:auto;display:block;background:#aa884b;border-radius:6px}
   /* 対局画面の写真。2枚並べるときは左が直前、右が直後。 */
   .shot{display:flex;gap:6px;margin:8px 0 4px}
   .shot img{width:calc(50% - 3px);height:auto;border-radius:4px;border:1px solid var(--line)}
@@ -116,8 +116,8 @@
 
     <h3 id="rule-kachi">勝ち負け</h3>
     <p class="lead">敵の大将を追い詰めたら勝ち。</p>
-    <div class="shot one"><img src="./assets/guide/rule-mate.jpg" alt=""></div>
-    <p class="cap">控えの近衛兵を投入して敵の大将を追い詰めたところ。結果カードが出る。</p>
+    <div class="shot"><img src="./assets/guide/rule-mate-before.jpg" alt=""><img src="./assets/guide/rule-mate-after.jpg" alt=""></div>
+    <p class="cap">左：控えの近衛兵を選ぶと置けるマスが光る。大将のすぐ前へ投入すると、敵の大将は自分の兵に囲まれてどこへも逃げられない（拡大して表示）。右：投入した直後。</p>
     <ul>
       <li>追い詰める＝敵軍がどう動いても大将を守れない状態</li>
       <li>敵軍に動ける兵がひとつもなくなったときも勝ち</li>
