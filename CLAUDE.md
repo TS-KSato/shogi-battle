@@ -23,7 +23,7 @@
 ```
 index.html               タイトル。手番と強さを選んで play3d.html へ渡す
 play3d.html              対局画面（3D）。UI・描画・演出をこの1ファイルに持つ
-guide.html               ガイド。兵・ルール・操作・困ったときの4区分
+guide.html               ガイド。兵・ルール・操作・困ったときの4区分。対局画面からは iframe で重ねる
 src/name.js              ゲーム名。タブ名と見出しで共有
 src/shogi.js             ルール層   盤面・合法手・終局判定・千日手
 src/engine.js            思考層     NPC の探索と評価
@@ -31,8 +31,10 @@ src/npc.js               接続層     本体から Worker を呼ぶ窓口。退
 src/npc.worker.js        接続層     Worker 側。engine.js を動かす
 assets/*.glb             3Dモデル（後述「3Dアセット」）
 assets/title.jpg         タイトルの戦場絵（任意。無ければ出さない）
+assets/guide/*.png       ガイドの兵の絵。tools/guide-icons.mjs で GLB から生成
 assets/stage/honjin.jpg  舞台絵。対局画面の背景
 test/                    ルール層と NPC のテスト
+tools/                   生成スクリプト（配信しない）
 ```
 
 ---

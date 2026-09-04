@@ -15,16 +15,21 @@
   main{max-width:440px;margin:0 auto}
   header{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:14px}
   h1{font-size:16px;font-weight:500;letter-spacing:.12em;margin:0}
-  header a{color:var(--dim);font-size:11px;text-decoration:none;padding:8px 0}
-  header a:hover,header a:focus-visible{color:var(--hit);outline:none}
+  .toTitle{color:var(--dim);font-size:11px;text-decoration:none;padding:8px 0}
+  .toTitle:hover,.toTitle:focus-visible{color:var(--hit);outline:none}
+  /* 対局画面に重ねて出すとき（iframe）は「タイトルへ」を出さない。対局を離脱させないため。 */
+  html.embed .toTitle{display:none}
 
-  /* 4つの入口。押した区分だけを下に開く。 */
+  /* 4つの入口。押した区分だけを開く。下にも同じものを置く。 */
   nav{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:16px}
   nav button{font:inherit;font-size:13px;letter-spacing:.06em;color:var(--ink);background:#1a1b18;
     border:1px solid var(--line);border-radius:3px;padding:10px 4px;min-height:48px;cursor:pointer;
     -webkit-tap-highlight-color:transparent}
   nav button.on{color:#f4e6ae;background:#2b2718;border-color:var(--hit)}
   nav button:focus-visible{outline:2px solid var(--hit);outline-offset:2px}
+  footer{border-top:1px solid var(--line);margin-top:24px;padding-top:16px}
+  footer nav{margin-bottom:10px}
+  footer .toTitle{display:block;text-align:center}
 
   section{border-top:1px solid var(--line);padding-top:12px}
   h2{font-size:14px;font-weight:500;letter-spacing:.1em;margin:0 0 10px}
@@ -37,11 +42,12 @@
   table{border-collapse:collapse;width:100%;margin:6px 0 10px;font-size:12px}
   th,td{border-bottom:1px solid var(--line);padding:6px 4px;text-align:left;vertical-align:middle}
   th{color:var(--dim);font-weight:400;font-size:11px;white-space:nowrap}
-  td.c{text-align:center;white-space:nowrap}
-  td:first-child{white-space:nowrap}       /* 兵の名前は折り返さない。《絵》は名前の上に置く */
-  /* 《絵》の場所。画像はあとで入れる。 */
-  .art{display:block;width:40px;height:40px;border:1px dashed var(--line);border-radius:3px;margin:0 0 3px}
-  .art.wide{width:100%;height:120px;display:block;margin:6px 0 10px}
+  td.name{white-space:nowrap;line-height:1.4}
+  td.name small{display:block;color:var(--dim);font-size:11px}
+  /* 兵の絵。対局画面と同じモデルを俯角35度で撮ったもの。 */
+  td.pic{width:1%;white-space:nowrap}
+  td.pic img{width:64px;height:auto;display:inline-block;vertical-align:middle}
+  td.pic img + img{margin-left:-14px}     /* 大将は青と赤を並べる */
   /* 動きの図。3×3 のマス目。上が敵陣。 */
   .mv{display:inline-grid;grid-template-columns:repeat(3,14px);grid-auto-rows:14px;gap:1px;
     vertical-align:middle;font-size:11px;line-height:14px;text-align:center;color:var(--hit)}
@@ -53,9 +59,9 @@
 </head>
 <body>
 <main>
-  <header><h1>ガイド</h1><a href="./index.html">タイトルへ</a></header>
+  <header><h1>ガイド</h1><a class="toTitle" href="./index.html">タイトルへ</a></header>
 
-  <nav id="nav">
+  <nav>
     <button data-sec="hei">兵</button>
     <button data-sec="rule">ルール</button>
     <button data-sec="sousa">操作</button>
@@ -66,36 +72,36 @@
   <section id="hei" hidden>
     <h2>兵</h2>
     <p class="lead">自軍は8種類・20人。討ち取った敵の兵も自軍になる。</p>
-    <p class="note">図は自軍の兵から見た動き。上が敵陣。●が兵、○が行ける先、矢印は「その方向へ何マスでも（途中に兵がいれば手前で止まる）」。</p>
+    <p class="note">図は自軍の兵から見た動き。上が敵陣。●が兵、○が行ける先、矢印は「その方向へ何マスでも（途中に兵がいれば手前で止まる）」。絵は対局画面と同じ見え方で、青が自軍。</p>
     <table>
-      <tr><th>兵</th><th>一文字</th><th>人数</th><th>動き</th></tr>
-      <tr><td><span class="art"></span>歩兵</td><td class="c">歩</td><td class="c">9</td>
+      <tr><th></th><th>兵</th><th>動き</th></tr>
+      <tr><td class="pic"><img src="./assets/guide/fu.png" alt=""></td><td class="name">歩兵<small>（歩）</small></td>
         <td><span class="mv"><span class="no">・</span><span>○</span><span class="no">・</span><span class="no">・</span><span class="me">●</span><span class="no">・</span><span class="no">・</span><span class="no">・</span><span class="no">・</span></span> 前へ1マス</td></tr>
-      <tr><td><span class="art"></span>槍兵</td><td class="c">槍</td><td class="c">2</td>
+      <tr><td class="pic"><img src="./assets/guide/kyo.png" alt=""></td><td class="name">槍兵<small>（槍）</small></td>
         <td><span class="mv"><span class="no">・</span><span>↑</span><span class="no">・</span><span class="no">・</span><span class="me">●</span><span class="no">・</span><span class="no">・</span><span class="no">・</span><span class="no">・</span></span> 前へ何マスでも</td></tr>
-      <tr><td><span class="art"></span>忍者</td><td class="c">忍</td><td class="c">2</td>
+      <tr><td class="pic"><img src="./assets/guide/kei.png" alt=""></td><td class="name">忍者<small>（忍）</small></td>
         <td><span class="mv"><span>○</span><span class="no">・</span><span>○</span><span class="no">・</span><span class="no">・</span><span class="no">・</span><span class="no">・</span><span class="me">●</span><span class="no">・</span></span> 前へ2、左右へ1の先へ跳ぶ。間の兵を飛び越える</td></tr>
-      <tr><td><span class="art"></span>侍</td><td class="c">侍</td><td class="c">2</td>
+      <tr><td class="pic"><img src="./assets/guide/gin.png" alt=""></td><td class="name">侍<small>（侍）</small></td>
         <td><span class="mv"><span>○</span><span>○</span><span>○</span><span class="no">・</span><span class="me">●</span><span class="no">・</span><span>○</span><span class="no">・</span><span>○</span></span> 前・斜め前・斜め後ろへ1マス</td></tr>
-      <tr><td><span class="art"></span>近衛兵</td><td class="c">衛</td><td class="c">2</td>
+      <tr><td class="pic"><img src="./assets/guide/kin.png" alt=""></td><td class="name">近衛兵<small>（衛）</small></td>
         <td><span class="mv"><span>○</span><span>○</span><span>○</span><span>○</span><span class="me">●</span><span>○</span><span class="no">・</span><span>○</span><span class="no">・</span></span> 前・斜め前・横・後ろへ1マス</td></tr>
-      <tr><td><span class="art"></span>僧兵</td><td class="c">僧</td><td class="c">1</td>
+      <tr><td class="pic"><img src="./assets/guide/kaku.png" alt=""></td><td class="name">僧兵<small>（僧）</small></td>
         <td><span class="mv"><span>↖</span><span class="no">・</span><span>↗</span><span class="no">・</span><span class="me">●</span><span class="no">・</span><span>↙</span><span class="no">・</span><span>↘</span></span> 斜めへ何マスでも</td></tr>
-      <tr><td><span class="art"></span>鉄砲兵</td><td class="c">砲</td><td class="c">1</td>
+      <tr><td class="pic"><img src="./assets/guide/hisha.png" alt=""></td><td class="name">鉄砲兵<small>（砲）</small></td>
         <td><span class="mv"><span class="no">・</span><span>↑</span><span class="no">・</span><span>←</span><span class="me">●</span><span>→</span><span class="no">・</span><span>↓</span><span class="no">・</span></span> 縦横へ何マスでも</td></tr>
-      <tr><td><span class="art"></span>大将</td><td class="c">—</td><td class="c">1</td>
+      <tr><td class="pic"><img src="./assets/guide/gyoku.png" alt=""><img src="./assets/guide/gyoku_red.png" alt=""></td><td class="name">大将</td>
         <td><span class="mv"><span>○</span><span>○</span><span>○</span><span>○</span><span class="me">●</span><span>○</span><span>○</span><span>○</span><span>○</span></span> どの方向へも1マス。追い詰められると負け</td></tr>
     </table>
-    <p class="note">一文字は持ち駒欄（画面下）に出る印。</p>
+    <p class="note">括弧の一文字は控え欄（画面下）に出る印。大将は控えに入らない。</p>
 
     <h3 id="hei-shinka">進化した兵</h3>
     <p class="lead">敵陣の奥3段で進化できる（条件は<a href="#rule-shinka">ルールの進化へ</a>）。近衛兵と同じ動きになった兵は、近衛兵と同じ幟を掲げる。</p>
     <table>
-      <tr><th>兵</th><th>進化後</th></tr>
-      <tr><td>歩兵・槍兵・忍者・侍</td><td>近衛兵と同じ動きになる。姿はそのままで幟を掲げる（近衛兵は最初から幟を掲げている）</td></tr>
-      <tr><td><span class="art"></span>僧兵</td><td>斜めへ何マスでも ＋ 縦横へ1マス。姿が変わる</td></tr>
-      <tr><td><span class="art"></span>鉄砲兵</td><td>縦横へ何マスでも ＋ 斜めへ1マス。姿が変わり、そばに大砲が置かれる</td></tr>
-      <tr><td>近衛兵・大将</td><td>進化しない</td></tr>
+      <tr><th></th><th>兵</th><th>進化後</th></tr>
+      <tr><td class="pic"></td><td class="name">歩兵・槍兵<br>忍者・侍</td><td>近衛兵と同じ動きになる。姿はそのままで幟を掲げる（近衛兵は最初から幟を掲げている）</td></tr>
+      <tr><td class="pic"><img src="./assets/guide/uma.png" alt=""></td><td class="name">僧兵</td><td>斜めへ何マスでも ＋ 縦横へ1マス。姿が変わる</td></tr>
+      <tr><td class="pic"><img src="./assets/guide/ryu.png" alt=""></td><td class="name">鉄砲兵</td><td>縦横へ何マスでも ＋ 斜めへ1マス。姿が変わり、そばに大砲が置かれる</td></tr>
+      <tr><td class="pic"></td><td class="name">近衛兵・大将</td><td>進化しない</td></tr>
     </table>
   </section>
 
@@ -111,10 +117,10 @@
       <li>自軍が同じ状態になれば負け。降参も負け</li>
     </ul>
 
-    <h3 id="rule-tounyu">討った兵は自軍になる</h3>
-    <p class="lead">敵の兵がいるマスへ動くと討ち取り、その兵は持ち駒欄に入る。</p>
+    <h3 id="rule-tounyu">討った兵は控えに入る</h3>
+    <p class="lead">敵の兵がいるマスへ動くと討ち取り、その兵は控え（画面下の控え欄）に入る。</p>
     <ul>
-      <li>自分の順番に、空いているマスへ投入できる。投入は移動の代わりの1行動</li>
+      <li>自分の順番に、控えから空いているマスへ投入できる。投入は移動の代わりの1行動</li>
       <li>投入した兵は進化する前の姿に戻る</li>
       <li>置けない場所は光らない。主な制限：同じ縦の列に自軍の歩兵（進化前）がいるとき、そこへ歩兵は置けない。動けない場所（歩兵・槍兵の最奥、忍者の奥2段）にも置けない。歩兵の投入だけで大将を追い詰めて勝つことはできない</li>
     </ul>
@@ -139,7 +145,7 @@
     <h3 id="rule-kurikaeshi">同じ配置のくり返し</h3>
     <p class="lead">同じ配置が4回くり返されると引き分け。</p>
     <ul>
-      <li>配置＝兵の位置・持ち駒・どちらの順番か</li>
+      <li>配置＝兵の位置・控え・どちらの順番か</li>
       <li>その間ずっと片方が大将に迫り続けていたら、迫り続けた側の負け</li>
     </ul>
   </section>
@@ -155,8 +161,8 @@
       <li>敵の兵がいる光ったマスを押すと討ち取る</li>
     </ul>
 
-    <h3 id="sousa-tounyu">兵を投入する</h3>
-    <p class="lead">持ち駒欄（画面下）の兵を押すと、置けるマスが光る。</p>
+    <h3 id="sousa-tounyu">控えから投入する</h3>
+    <p class="lead">控え欄（画面下）の兵を押すと、置けるマスが光る。</p>
 
     <h3 id="sousa-kakudai">拡大する</h3>
     <p class="lead">2本の指で広げると拡大する（最大3倍）。拡大して操作するのが普通の遊び方。</p>
@@ -192,31 +198,42 @@
     <h3 id="komatta-mamoru">選びたい兵が選べない</h3>
     <p class="lead">「大将が危ない」のときは、大将を守れる兵しか選べない（<a href="#rule-abunai">ルールの「大将が危ない」へ</a>）。</p>
   </section>
+
+  <footer>
+    <nav>
+      <button data-sec="hei">兵</button>
+      <button data-sec="rule">ルール</button>
+      <button data-sec="sousa">操作</button>
+      <button data-sec="komatta">困ったとき</button>
+    </nav>
+    <a class="toTitle" href="./index.html">タイトルへ</a>
+  </footer>
 </main>
 
 <script type="module">
 import { GAME_NAME } from './src/name.js';
 document.title = `ガイド — ${GAME_NAME}`;
+if (window.self !== window.top) document.documentElement.classList.add('embed');
 
-const nav = document.getElementById('nav');
 const sections = [...document.querySelectorAll('main > section')];
+const buttons = [...document.querySelectorAll('nav button')];
 function open(id){
   for (const s of sections) s.hidden = (s.id !== id);
-  for (const b of nav.querySelectorAll('button')) b.classList.toggle('on', b.dataset.sec === id);
+  for (const b of buttons) b.classList.toggle('on', b.dataset.sec === id);
 }
 /* URL の # で区分を開く。区分の中の見出し（#rule-shinka など）なら、その区分を開いてから
-   見出しへ送る。区分どうしの参照はこの仕組みで飛ぶ。 */
+   見出しへ送る。区分どうしの参照はこの仕組みで飛ぶ。# が無ければ「兵」。 */
 function openFromHash(){
   const id = location.hash.slice(1);
   const el = id && document.getElementById(id);
   const sec = el && el.closest('section');
-  if (!sec) return;
+  if (!sec){ open('hei'); return; }
   open(sec.id);
   if (el !== sec) el.scrollIntoView();
 }
-nav.addEventListener('click', e => {
-  const b = e.target.closest('button'); if (!b) return;
+for (const b of buttons) b.addEventListener('click', () => {
   location.hash = b.dataset.sec;            // 履歴に残るので、戻るで前の区分に戻れる
+  scrollTo(0, 0);                           // 下の入口から開いたときも区分の頭から読める
 });
 addEventListener('hashchange', openFromHash);
 openFromHash();

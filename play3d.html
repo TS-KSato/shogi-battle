@@ -12,12 +12,17 @@
     -webkit-text-size-adjust:100%;overscroll-behavior:none}
   #app{position:fixed;inset:0;display:flex;flex-direction:column}
   #view{flex:1;min-height:0;position:relative}
-  /* ガイドへ。対局の状態を失わないよう別タブで開く。 */
+  /* ガイド。対局の上に重ねて iframe で出し、閉じると同じ局面に戻る。 */
   #help{position:absolute;top:calc(8px + env(safe-area-inset-top));right:calc(8px + env(safe-area-inset-right));
-    width:44px;height:44px;display:flex;align-items:center;justify-content:center;
-    color:var(--ink);font-size:16px;text-decoration:none;border:1px solid var(--line);border-radius:50%;
+    width:44px;height:44px;display:flex;align-items:center;justify-content:center;font:inherit;
+    color:var(--ink);font-size:16px;border:1px solid var(--line);border-radius:50%;cursor:pointer;
     background:rgba(12,13,11,.55);-webkit-tap-highlight-color:transparent}
   #help:hover,#help:focus-visible{color:var(--hit);border-color:var(--hit);outline:none}
+  #guideOv{position:fixed;inset:0;background:var(--bg);z-index:20;display:flex;flex-direction:column}
+  #guideOv[hidden]{display:none}
+  #guideOv iframe{flex:1;width:100%;border:0;background:var(--bg)}
+  #guideClose{position:absolute;top:calc(8px + env(safe-area-inset-top));right:calc(8px + env(safe-area-inset-right));
+    width:44px;height:44px;border-radius:50%;padding:0;font-size:14px}
   canvas{display:block;width:100%;height:100%;touch-action:none}
 
   /* 手番の行。下部パネルの最上段。右端は退避手の表示。 */
@@ -89,7 +94,7 @@
 </head>
 <body>
 <div id="app">
-  <div id="view"><a id="help" href="./guide.html" target="_blank" rel="noopener" title="ガイドを開く">？</a></div>
+  <div id="view"><button id="help" title="ガイドを開く">？</button></div>
   <div id="panel">
     <div id="turnRow"><span id="turn">読み込み中…</span><span id="info"></span></div>
     <div id="log"><div></div><div></div><div></div><div></div><div></div></div>
@@ -110,6 +115,8 @@
   <div class="rowb"><button id="promoYes">進化する</button><button id="promoNo">進化しない</button></div>
   <button id="promoGo" class="primary" disabled>この行動で進む</button>
 </div></div>
+
+<div id="guideOv" hidden><iframe id="guideFrame" title="ガイド"></iframe><button id="guideClose" title="ガイドを閉じる">×</button></div>
 
 <div class="overlay sheet" id="logOv"><div class="card">
   <p>戦闘ログ</p>
@@ -1263,6 +1270,12 @@ $('promoGo').addEventListener('click', () => {
   if (mv !== undefined) humanPlay(mv);
 });
 $('resultClose').addEventListener('click', () => $('resultOv').classList.remove('on'));
+$('help').addEventListener('click', () => {
+  const f = $('guideFrame');
+  if (!f.src) f.src = './guide.html';                  // 最初に開いたときだけ読む
+  $('guideOv').hidden = false;
+});
+$('guideClose').addEventListener('click', () => { $('guideOv').hidden = true; });
 $('resultTitle').addEventListener('click', () => { location.href = './index.html'; });
 $('resign').addEventListener('click', () => {
   if (over) return; over = true; thinking = false; hlDirty = true;
