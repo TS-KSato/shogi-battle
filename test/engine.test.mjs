@@ -14,6 +14,10 @@
 import * as S from '../src/shogi.js';
 import { think, posKey, LEVELS } from '../src/engine.js';
 
+/* 自己対局に使う乱数の種。engine.js は Math.random で手を選ぶので、対局のあいだだけ
+   差し替えて毎回同じ対戦にする。値を変えれば別の対戦になる。 */
+const GAME_SEEDS = [1, 2, 3];
+
 let pass = 0, fail = 0;
 const ok = (name, got, want) => {
   const good = String(got) === String(want);
@@ -90,6 +94,16 @@ console.log('\n思考時間');
 
 /* ───────── 4. 対局が終わること ───────── */
 
+/* 種を固定して1局を再現する。思考の打ち切りは時計を見るため、実行のたびに読む深さが
+   変わってしまう。対局のあいだは時計も止める（easy は深さ2なので必ず読み終わる）。 */
+function withSeed(seed, fn){
+  const rnd = Math.random, now = Date.now, t = now();
+  let s = seed >>> 0;
+  Math.random = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
+  Date.now = () => t;
+  try { return fn(); } finally { Math.random = rnd; Date.now = now; }
+}
+
 function play(lvB, lvW, maxPly = 300){
   const pos = S.parseSfen(S.START_SFEN);
   const hist = new Map();
@@ -111,9 +125,13 @@ function play(lvB, lvW, maxPly = 300){
 
 console.log('\n対局');
 {
-  const g = play('easy', 'easy');
-  ok('  easy 同士が終局する', g.reason, '詰み');
-  note('  手数', g.plies);
+  let ended = 0;
+  for (const seed of GAME_SEEDS){
+    const g = withSeed(seed, () => play('easy', 'easy'));
+    if (g.reason !== '手数上限') ended++;
+    note(`  種 ${seed}`, `${g.reason} ${g.plies}手`);
+  }
+  ok(`  easy 同士が ${GAME_SEEDS.length} 局とも終局する`, ended, GAME_SEEDS.length);
 }
 
 if (process.argv.includes('--games')){
