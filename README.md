@@ -99,8 +99,18 @@ python3 -m http.server 8000
 経由すると先読みが効いて約3秒になる（タイトル側の絵とロゴが 1.2 MB あるので、
 先読みが終わるまでには 4G で12秒ほどかかる）。
 
-外部ライブラリは three.js r128（MIT）を CDN から読む。
-3Dモデル・背景絵・ロゴの出所とライセンスは未記録。
+## 素材の出所
+
+| 素材 | 作り方 |
+|---|---|
+| 兵の3Dモデル（`assets/*.glb`） | Magnific で画像を生成 → Magnific 内の Tripo V3.1 で3D化 → Mixamo でリグとモーションを付与 → Blender で調整 |
+| 舞台絵 `assets/stage/honjin.jpg`、タイトル絵 `assets/title.jpg`、ロゴ `assets/logo.png` | Magnific で生成 |
+
+- Magnific は Premium+（年払い）契約で利用。生成物の商用利用は契約プランの
+  規約による
+- Mixamo は Adobe のアカウント登録のみで、商用・非商用を問わずロイヤリティ
+  フリーで利用可
+- 外部ライブラリは three.js r128（MIT）を CDN から読む
 
 ## 実装していないもの
 
