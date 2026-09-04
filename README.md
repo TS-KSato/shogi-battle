@@ -1,4 +1,4 @@
-# 将棋3Dバトル
+# 鬼謀
 
 将棋のルールをそのまま使い、盤上の駒を和風デフォルメ3Dキャラクターとして
 表示する、スマートフォン向けの一人用ゲーム。
@@ -18,7 +18,7 @@ src/
   engine.js        NPC の探索と評価。shogi.js のみに依存
   npc.js           本体側から NPC を呼ぶ窓口（退避処理つき）
   npc.worker.js    NPC を別スレッドで動かす受け口
-assets/            3Dモデル（GLB）と舞台絵（stage/honjin.jpg）
+assets/            3Dモデル（GLB）、舞台絵（stage/honjin.jpg）、タイトルの絵とロゴ
 test/
   shogi.test.mjs   ルール層の検証（perft・禁じ手・千日手）
   engine.test.mjs  NPC の検証（戦術・合法性・時間・終局）

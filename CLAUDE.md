@@ -31,6 +31,7 @@ src/npc.js               接続層     本体から Worker を呼ぶ窓口。退
 src/npc.worker.js        接続層     Worker 側。engine.js を動かす
 assets/*.glb             3Dモデル（後述「3Dアセット」）
 assets/title.jpg         タイトルの戦場絵（任意。無ければ出さない）
+assets/logo.png          タイトルのロゴ（任意。無ければ文字の見出し）
 assets/guide/*.png       ガイドの兵の絵。tools/guide-icons.mjs で GLB から生成
 assets/stage/honjin.jpg  舞台絵。対局画面の背景
 test/                    ルール層と NPC のテスト
