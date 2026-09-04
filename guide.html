@@ -44,10 +44,12 @@
   th{color:var(--dim);font-weight:400;font-size:11px;white-space:nowrap}
   td.name{white-space:nowrap;line-height:1.4}
   td.name small{display:block;color:var(--dim);font-size:11px}
-  /* 兵の絵。対局画面と同じモデルを俯角35度で撮ったもの。 */
+  /* 兵の絵。対局画面と同じモデルを俯角35度で撮ったもの（PNG は透明）。下地は対局画面の
+     地面＝舞台絵 assets/stage/honjin.jpg の、陣幕より下の土の平均色。 */
   td.pic{width:1%;white-space:nowrap}
-  td.pic img{width:64px;height:auto;display:inline-block;vertical-align:middle}
-  td.pic img + img{margin-left:-14px}     /* 大将は青と赤を並べる */
+  td.pic img{width:64px;height:auto;display:inline-block;vertical-align:middle;
+    background:#aa884b;border-radius:6px}
+  td.pic img + img{margin-left:3px}       /* 大将は青と赤を並べる */
   /* 動きの図。3×3 のマス目。上が敵陣。 */
   .mv{display:inline-grid;grid-template-columns:repeat(3,14px);grid-auto-rows:14px;gap:1px;
     vertical-align:middle;font-size:11px;line-height:14px;text-align:center;color:var(--hit)}
