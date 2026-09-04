@@ -23,11 +23,14 @@
 ```
 index.html               タイトル。手番と強さを選んで play3d.html へ渡す
 play3d.html              対局画面（3D）。UI・描画・演出をこの1ファイルに持つ
+guide.html               ガイド。兵・ルール・操作・困ったときの4区分
+src/name.js              ゲーム名。タブ名と見出しで共有
 src/shogi.js             ルール層   盤面・合法手・終局判定・千日手
 src/engine.js            思考層     NPC の探索と評価
 src/npc.js               接続層     本体から Worker を呼ぶ窓口。退避処理を持つ
 src/npc.worker.js        接続層     Worker 側。engine.js を動かす
 assets/*.glb             3Dモデル（後述「3Dアセット」）
+assets/title.jpg         タイトルの戦場絵（任意。無ければ出さない）
 assets/stage/honjin.jpg  舞台絵。対局画面の背景
 test/                    ルール層と NPC のテスト
 ```
@@ -125,7 +128,7 @@ GitHub Pages は `https://<user>.github.io/<repo>/` というサブパスで配�
 
 - 人間 対 NPC。手番と強さはタイトル画面から `?side=` `?level=` で渡す。
   無い・不正なら先手・ふつう
-  - 手番：先手（手前）= `0`、後手（奥）= `1`
+  - 順番：先攻 = `0`、後攻 = `1`。どちらでも自軍は画面手前（後攻では戦場を反転する）
   - 強さ：やさしい `easy`、ふつう `normal`、つよい `hard`
 - 終局は、詰み・手詰まり（指せる手がない）・投了・千日手
   - 千日手：同一局面が4回目に現れたら引き分け。一方が王手を続けていた場合は

@@ -17,6 +17,8 @@
             calc(20px + env(safe-area-inset-bottom)) calc(20px + env(safe-area-inset-left))}
   main{width:100%;max-width:320px}
 
+  /* 戦場の絵。assets/title.jpg があれば見出しの上に出す。無ければ場所ごと出さない。 */
+  #art{display:block;width:100%;border-radius:4px;margin:0 0 18px}
   h1{font-size:20px;font-weight:500;letter-spacing:.14em;margin:0 0 4px}
   .lead{color:var(--dim);font-size:11px;margin:0 0 30px;line-height:1.8}
 
@@ -29,18 +31,26 @@
     color:#f4e6ae;background:#2b2718;border:1px solid var(--hit);border-radius:3px;
     padding:12px 6px;min-height:52px;cursor:pointer;-webkit-tap-highlight-color:transparent}
   select:focus-visible,button:focus-visible{outline:2px solid var(--hit);outline-offset:2px}
+
+  /* ガイドの4つの入口。出陣の下に小さく並べる。 */
+  .guide{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:22px}
+  .guide a{display:flex;align-items:center;justify-content:center;min-height:44px;padding:6px 2px;
+    color:var(--dim);font-size:11px;letter-spacing:.04em;text-decoration:none;
+    border:1px solid var(--line);border-radius:3px;-webkit-tap-highlight-color:transparent}
+  .guide a:hover,.guide a:focus-visible{color:var(--hit);border-color:var(--hit);outline:none}
 </style>
 </head>
 <body>
 <main>
+  <img id="art" src="./assets/title.jpg" alt="" hidden onload="this.hidden=false">
   <h1 id="title"></h1>
   <p class="lead">兵を率いて、敵の大将を追い詰めろ。</p>
 
   <div class="row">
     <label for="side">順番</label>
     <select id="side">
-      <option value="0" selected>先攻（手前）</option>
-      <option value="1">後攻（奥）</option>
+      <option value="0" selected>先攻</option>
+      <option value="1">後攻</option>
     </select>
   </div>
   <div class="row">
@@ -52,6 +62,13 @@
     </select>
   </div>
   <button id="start">出陣する</button>
+
+  <div class="guide">
+    <a href="./guide.html#hei">兵</a>
+    <a href="./guide.html#rule">ルール</a>
+    <a href="./guide.html#sousa">操作</a>
+    <a href="./guide.html#komatta">困ったとき</a>
+  </div>
 </main>
 
 <script type="module">
@@ -63,6 +80,20 @@ document.getElementById('start').addEventListener('click', () => {
   const level = document.getElementById('level').value;
   location.href = `./play3d.html?side=${side}&level=${level}`;
 });
+
+/* 対局画面が最初に読む兵のモデルと舞台絵を、この画面のうちに先読みしておく。
+   prefetch は HTTP キャッシュに入るので、play3d.html の GLTFLoader の取得がそれを使う。 */
+{
+  const files = ['stage/honjin.jpg', 'nobori_blue.glb', 'nobori_red.glb', 'taiho.glb'];
+  for (const side of ['blue', 'red']){
+    for (const n of ['fu','kyo','kei','gin','kin','kaku','hisha','gyoku']) files.push(`${n}_${side}_idle.glb`);
+    for (const n of ['kaku','hisha']) files.push(`${n}_${side}_promoted.glb`);
+  }
+  for (const f of files){
+    const l = document.createElement('link'); l.rel = 'prefetch'; l.href = `./assets/${f}`;
+    document.head.appendChild(l);
+  }
+}
 </script>
 </body>
 </html>
