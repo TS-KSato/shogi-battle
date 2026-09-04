@@ -4,8 +4,8 @@
  *   node tools/guide-icons.mjs
  *
  * play3d.html と同じ three.js（CDN の同じ版）・同じ GLB・同じ照明で、俯角35度から
- * 1体ずつ撮る。姿勢は待機アニメの途中。自軍（青）は対局画面と同じ奥向き、敵軍（赤）は
- * 手前向き。背景は透明。
+ * 1体ずつ撮る。姿勢は待機アニメの途中。自軍（青）を対局画面と同じ奥向きで。背景は透明。
+ * 描画後に透明でない画素の範囲を切り取り、四辺に同じ余白を付けて中央に置く。
  * 近衛兵には幟、進化した鉄砲兵には大砲を、対局画面と同じ位置に添える。
  *
  * 必要なもの：playwright-core と Chromium。playwright-core が別の場所にあるなら
@@ -34,11 +34,10 @@ const ITEMS = [
   { code:'kaku',      file:'kaku_blue_idle.glb',      side:'blue' },
   { code:'hisha',     file:'hisha_blue_idle.glb',     side:'blue' },
   { code:'gyoku',     file:'gyoku_blue_idle.glb',     side:'blue' },
-  { code:'gyoku_red', file:'gyoku_red_idle.glb',      side:'red'  },
   { code:'uma',       file:'kaku_blue_promoted.glb',  side:'blue' },
   { code:'ryu',       file:'hisha_blue_promoted.glb', side:'blue', extra:{ file:'taiho.glb', x:0.35*0.7026, z:0 } },
 ];
-const W = 240, H = 280;
+const W = 360, H = 420, MARGIN = 12;   // 描画の大きさと、切り取り後の余白（px）
 
 // リポジトリをそのまま配る小さなサーバー（GLB を相対パスで読むため）
 const TYPES = { '.html':'text/html; charset=utf-8', '.js':'application/javascript', '.glb':'model/gltf-binary' };
@@ -66,7 +65,7 @@ for (const url of [
 
 mkdirSync(OUT, { recursive:true });
 for (const it of ITEMS){
-  const dataUrl = await page.evaluate(async ({ it, W, H }) => {
+  const dataUrl = await page.evaluate(async ({ it, W, H, MARGIN }) => {
     const load = url => new Promise((res, rej) => new THREE.GLTFLoader().load(url, res, undefined, rej));
     const lambert = src => { const m = new THREE.MeshLambertMaterial({ skinning: true }); if (src.map) m.map = src.map; if (src.color) m.color.copy(src.color); return m; };
     const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true, preserveDrawingBuffer:true });
@@ -109,10 +108,20 @@ for (const it of ITEMS){
     for (let i = 0; i < 40; i++){ const mid = (lo + hi) / 2; if (fits(mid)) hi = mid; else lo = mid; }
     fits(hi);
     renderer.render(sc, cam);
-    const url = renderer.domElement.toDataURL('image/png');
+    // 透明でない画素の範囲を求め、同じ余白で切り取る
+    const src = document.createElement('canvas'); src.width = W; src.height = H;
+    const g2 = src.getContext('2d'); g2.drawImage(renderer.domElement, 0, 0);
+    const d = g2.getImageData(0, 0, W, H).data;
+    let x0 = W, y0 = H, x1 = -1, y1 = -1;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (d[(y*W + x)*4 + 3] > 8){
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+    const out = document.createElement('canvas'); out.width = bw + 2*MARGIN; out.height = bh + 2*MARGIN;
+    out.getContext('2d').drawImage(src, x0, y0, bw, bh, MARGIN, MARGIN, bw, bh);
+    const url = out.toDataURL('image/png');
     renderer.dispose();
     return url;
-  }, { it, W, H });
+  }, { it, W, H, MARGIN });
   const buf = Buffer.from(dataUrl.split(',')[1], 'base64');
   writeFileSync(path.join(OUT, `${it.code}.png`), buf);
   console.log(`${it.code}.png  ${buf.length} bytes`);

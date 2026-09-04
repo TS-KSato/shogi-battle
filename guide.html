@@ -47,9 +47,12 @@
   /* 兵の絵。対局画面と同じモデルを俯角35度で撮ったもの（PNG は透明）。下地は対局画面の
      地面＝舞台絵 assets/stage/honjin.jpg の、陣幕より下の土の平均色。 */
   td.pic{width:1%;white-space:nowrap}
-  td.pic img{width:64px;height:auto;display:inline-block;vertical-align:middle;
-    background:#aa884b;border-radius:6px}
-  td.pic img + img{margin-left:3px}       /* 大将は青と赤を並べる */
+  td.pic img{height:64px;width:auto;display:block;background:#aa884b;border-radius:6px}
+  /* 対局画面の写真。2枚並べるときは左が直前、右が直後。 */
+  .shot{display:flex;gap:6px;margin:8px 0 4px}
+  .shot img{width:calc(50% - 3px);height:auto;border-radius:4px;border:1px solid var(--line)}
+  .shot.one img{width:56%}
+  .cap{color:var(--dim);font-size:11px;margin:0 0 10px}
   /* 動きの図。3×3 のマス目。上が敵陣。 */
   .mv{display:inline-grid;grid-template-columns:repeat(3,14px);grid-auto-rows:14px;gap:1px;
     vertical-align:middle;font-size:11px;line-height:14px;text-align:center;color:var(--hit)}
@@ -74,7 +77,7 @@
   <section id="hei" hidden>
     <h2>兵</h2>
     <p class="lead">自軍は8種類・20人。討ち取った敵の兵も自軍になる。</p>
-    <p class="note">図は自軍の兵から見た動き。上が敵陣。●が兵、○が行ける先、矢印は「その方向へ何マスでも（途中に兵がいれば手前で止まる）」。絵は対局画面と同じ見え方で、青が自軍。</p>
+    <p class="note">図は自軍の兵から見た動き。上が敵陣。●が兵、○が行ける先、矢印は「その方向へ何マスでも（途中に兵がいれば手前で止まる）」。絵は対局画面と同じ見え方（自軍は奥向き）。敵軍は同じ姿で赤。</p>
     <table>
       <tr><th></th><th>兵</th><th>動き</th></tr>
       <tr><td class="pic"><img src="./assets/guide/fu.png" alt=""></td><td class="name">歩兵<small>（歩）</small></td>
@@ -91,7 +94,7 @@
         <td><span class="mv"><span>↖</span><span class="no">・</span><span>↗</span><span class="no">・</span><span class="me">●</span><span class="no">・</span><span>↙</span><span class="no">・</span><span>↘</span></span> 斜めへ何マスでも</td></tr>
       <tr><td class="pic"><img src="./assets/guide/hisha.png" alt=""></td><td class="name">鉄砲兵<small>（砲）</small></td>
         <td><span class="mv"><span class="no">・</span><span>↑</span><span class="no">・</span><span>←</span><span class="me">●</span><span>→</span><span class="no">・</span><span>↓</span><span class="no">・</span></span> 縦横へ何マスでも</td></tr>
-      <tr><td class="pic"><img src="./assets/guide/gyoku.png" alt=""><img src="./assets/guide/gyoku_red.png" alt=""></td><td class="name">大将</td>
+      <tr><td class="pic"><img src="./assets/guide/gyoku.png" alt=""></td><td class="name">大将</td>
         <td><span class="mv"><span>○</span><span>○</span><span>○</span><span>○</span><span class="me">●</span><span>○</span><span>○</span><span>○</span><span>○</span></span> どの方向へも1マス。追い詰められると負け</td></tr>
     </table>
     <p class="note">括弧の一文字は控え欄（画面下）に出る印。大将は控えに入らない。</p>
@@ -113,6 +116,8 @@
 
     <h3 id="rule-kachi">勝ち負け</h3>
     <p class="lead">敵の大将を追い詰めたら勝ち。</p>
+    <div class="shot one"><img src="./assets/guide/rule-mate.jpg" alt=""></div>
+    <p class="cap">控えの近衛兵を投入して敵の大将を追い詰めたところ。結果カードが出る。</p>
     <ul>
       <li>追い詰める＝敵軍がどう動いても大将を守れない状態</li>
       <li>敵軍に動ける兵がひとつもなくなったときも勝ち</li>
@@ -121,6 +126,8 @@
 
     <h3 id="rule-tounyu">討った兵は控えに入る</h3>
     <p class="lead">敵の兵がいるマスへ動くと討ち取り、その兵は控え（画面下の控え欄）に入る。</p>
+    <div class="shot"><img src="./assets/guide/rule-capture-before.jpg" alt=""><img src="./assets/guide/rule-capture-after.jpg" alt=""></div>
+    <p class="cap">左：自軍の鉄砲兵を選ぶと、討てる敵の鉄砲兵に赤い輪が出る。右：討った直後。控え欄に「砲」が入っている。</p>
     <ul>
       <li>自分の順番に、控えから空いているマスへ投入できる。投入は移動の代わりの1行動</li>
       <li>投入した兵は進化する前の姿に戻る</li>
@@ -129,6 +136,8 @@
 
     <h3 id="rule-shinka">進化</h3>
     <p class="lead">敵陣の奥3段に入ると、兵が強くなる（動きは<a href="#hei-shinka">兵の「進化した兵」へ</a>）。</p>
+    <div class="shot one"><img src="./assets/guide/rule-promo.jpg" alt=""></div>
+    <p class="cap">歩兵が奥3段へ入る手。確認が出て、「進化する」を押すと進化後に行ける先が紫で出る。</p>
     <ul>
       <li>領域に入る・領域の中で動く・領域から出る、どの行動でも進化できる</li>
       <li>進化するかどうかは選べる。両方できるときは確認が出る</li>
@@ -138,6 +147,8 @@
 
     <h3 id="rule-abunai">大将が危ない</h3>
     <p class="lead">敵が次の行動で大将を討てるとき、行動の表示に赤く「大将が危ない」と出る。</p>
+    <div class="shot one"><img src="./assets/guide/rule-check.jpg" alt=""></div>
+    <p class="cap">敵の鉄砲兵が自軍の大将に迫っている。大将のマスが赤く、行動の表示に「大将が危ない」。</p>
     <ul>
       <li>このときは大将を守る行動しか選べない。逃がす、間に兵を置く、迫っている兵を討つ</li>
       <li>自分から大将を危ない場所へ動かすこともできない</li>
@@ -156,21 +167,21 @@
   <section id="sousa" hidden>
     <h2>操作</h2>
 
-    <h3 id="sousa-ugokasu">兵を動かす</h3>
-    <p class="lead">兵を押すと行ける先が光る。光ったマスを押すと動く。</p>
+    <h3 id="sousa-ugokasu">兵を動かす（押す＝タップ）</h3>
+    <p class="lead">兵を押す（タップ）と行ける先が光る。光ったマスを押すと動く。</p>
     <ul>
       <li>別の場所を押すと選び直し</li>
       <li>敵の兵がいる光ったマスを押すと討ち取る</li>
     </ul>
 
-    <h3 id="sousa-tounyu">控えから投入する</h3>
+    <h3 id="sousa-tounyu">控えから投入する（タップ）</h3>
     <p class="lead">控え欄（画面下）の兵を押すと、置けるマスが光る。</p>
 
-    <h3 id="sousa-kakudai">拡大する</h3>
-    <p class="lead">2本の指で広げると拡大する（最大3倍）。拡大して操作するのが普通の遊び方。</p>
+    <h3 id="sousa-kakudai">拡大する（ピンチアウト）</h3>
+    <p class="lead">2本の指で広げる（ピンチアウト）と拡大する（最大3倍）。拡大して操作するのが普通の遊び方。</p>
     <ul>
-      <li>1本の指でなぞると見る場所が動く</li>
-      <li>「ズーム解除」で等倍に戻る（拡大中だけ出る）</li>
+      <li>1本の指でなぞる（ドラッグ）と見る場所が動く</li>
+      <li>「ズーム解除」（ズームアウト）で等倍に戻る（拡大中だけ出る）</li>
     </ul>
 
     <h3 id="sousa-shinka">進化の確認</h3>
