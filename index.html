@@ -10,15 +10,19 @@
   html,body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);
     font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
     -webkit-text-size-adjust:100%}
-  /* viewport-fit=cover なので、四辺は safe-area のぶん逃がす。 */
-  body{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  /* 戦場の絵を画面いっぱいに敷く。絵が無ければ背景色が残るだけ。
+     viewport-fit=cover なので、四辺は safe-area のぶん逃がす。 */
+  body{background:var(--bg) url("./assets/title.jpg") center/cover no-repeat;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
     min-height:100vh;
     padding:calc(28px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right))
             calc(20px + env(safe-area-inset-bottom)) calc(20px + env(safe-area-inset-left))}
-  main{width:100%;max-width:320px}
-
-  /* 戦場の絵。assets/title.jpg があれば見出しの上に出す。無ければ場所ごと出さない。 */
-  #art{display:block;width:100%;border-radius:4px;margin:0 0 18px}
+  main{position:relative;width:100%;max-width:320px}
+  /* 絵が読めたときだけ下半分へ寄せ、文字の下地として暗くする。読めなければ中央のまま。 */
+  html.art body{justify-content:flex-end}
+  html.art body::before{content:"";position:fixed;inset:0;pointer-events:none;
+    background:linear-gradient(to bottom,transparent 30%,rgba(12,13,11,.50) 50%,
+      rgba(12,13,11,.88) 72%,rgba(12,13,11,.95) 100%)}
   h1{font-size:20px;font-weight:500;letter-spacing:.14em;margin:0 0 4px}
   .lead{color:var(--dim);font-size:11px;margin:0 0 30px;line-height:1.8}
 
@@ -42,7 +46,6 @@
 </head>
 <body>
 <main>
-  <img id="art" src="./assets/title.jpg" alt="" hidden onload="this.hidden=false">
   <h1 id="title"></h1>
   <p class="lead">兵を率いて、敵の大将を追い詰めろ。</p>
 
@@ -75,6 +78,8 @@
 import { GAME_NAME } from './src/name.js';
 document.title = GAME_NAME;
 document.getElementById('title').textContent = GAME_NAME;
+// 絵が読めたときだけ、下半分に寄せる配置へ切り替える（CSS の背景と同じ URL なので取得は1回）
+{ const art = new Image(); art.onload = () => document.documentElement.classList.add('art'); art.src = './assets/title.jpg'; }
 document.getElementById('start').addEventListener('click', () => {
   const side = document.getElementById('side').value;
   const level = document.getElementById('level').value;
