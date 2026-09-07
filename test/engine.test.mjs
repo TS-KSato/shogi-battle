@@ -16,7 +16,13 @@ import { think, posKey, LEVELS } from '../src/engine.js';
 
 /* 自己対局に使う乱数の種。engine.js は Math.random で手を選ぶので、対局のあいだだけ
    差し替えて毎回同じ対戦にする。値を変えれば別の対戦になる。 */
-const GAME_SEEDS = [1, 2, 3];
+const GAME_SEEDS = [1, 2, 3];               // easy 同士。終局の確認
+const RANK_SEEDS = [11, 12, 13, 14];        // --games の順序の確認。normal/easy の2局、hard/normal の2局の順
+/* 種を固定するあいだの時計の進み。engine.js は 1024 局面ごとに Date.now() を見て打ち切るので、
+   呼び出しごとに一定量だけ進めると、打ち切りが端末の速さによらず読んだ局面数で決まる
+   （normal の 600ms は約20万局面、hard の 1200ms は約41万局面。実測では 1024 局面に
+   1.3〜3.8ms かかるので、実時間で動かすときと同じ程度の深さになる）。 */
+const MS_PER_TICK = 3;
 
 let pass = 0, fail = 0;
 const ok = (name, got, want) => {
@@ -95,12 +101,12 @@ console.log('\n思考時間');
 /* ───────── 4. 対局が終わること ───────── */
 
 /* 種を固定して1局を再現する。思考の打ち切りは時計を見るため、実行のたびに読む深さが
-   変わってしまう。対局のあいだは時計も止める（easy は深さ2なので必ず読み終わる）。 */
+   変わってしまう。対局のあいだは時計も差し替え、呼び出しごとに MS_PER_TICK だけ進める。 */
 function withSeed(seed, fn){
-  const rnd = Math.random, now = Date.now, t = now();
-  let s = seed >>> 0;
+  const rnd = Math.random, now = Date.now;
+  let s = seed >>> 0, t = now();
   Math.random = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
-  Date.now = () => t;
+  Date.now = () => (t += MS_PER_TICK);
   try { return fn(); } finally { Math.random = rnd; Date.now = now; }
 }
 
@@ -135,12 +141,19 @@ console.log('\n対局');
 }
 
 if (process.argv.includes('--games')){
-  console.log('\n難易度の順序（各1局）');
+  console.log('\n難易度の順序（各2局。先攻と後攻を入れ替える）');
+  let k = 0;
   for (const [a, b] of [['normal','easy'], ['hard','normal']]){
-    const g1 = play(a, b), g2 = play(b, a);
-    const win = (g1.winner === S.BLACK ? 1 : 0) + (g2.winner === S.WHITE ? 1 : 0);
-    ok(`  ${a} が ${b} に勝ち越す`, win >= 1, true);
-    note(`  ${a} vs ${b}`, `${win}/2 勝  ${g1.plies}手 / ${g2.plies}手`);
+    let wins = 0, losses = 0;
+    for (const [lvB, lvW] of [[a, b], [b, a]]){
+      const seed = RANK_SEEDS[k++];
+      const g = withSeed(seed, () => play(lvB, lvW));
+      const winner = g.winner === S.BLACK ? lvB : g.winner === S.WHITE ? lvW : null;
+      if (winner === a) wins++; else if (winner === b) losses++;
+      note(`  種 ${seed}  ${lvB}（先攻）対 ${lvW}（後攻）`,
+           `${winner ? winner + ' の勝ち' : '決着なし'}  ${g.plies}手（${g.reason || '非合法手'}）`);
+    }
+    ok(`  ${a} が ${b} に勝ち越す（${wins} 勝 ${losses} 敗）`, wins > losses, true);
   }
 }
 
