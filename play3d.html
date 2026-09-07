@@ -61,6 +61,7 @@
             calc(10px + env(safe-area-inset-left))}
   .myhand{display:flex;flex-wrap:wrap;gap:5px;align-items:center;min-height:31px;
     margin-bottom:9px;font-size:11px;color:var(--dim)}
+  .myhand[hidden]{display:none}
   .controls{display:flex;flex-wrap:wrap;gap:6px}
   .grp{display:flex;gap:6px;flex:1;min-width:0}
   button,select{font:inherit;font-size:12px;color:var(--ink);background:#1a1b18;
@@ -112,7 +113,9 @@
     padding:12px;border:1px solid var(--line);border-radius:3px;text-decoration:none;
     -webkit-tap-highlight-color:transparent}
   #drillOv .back:hover,#drillOv .back:focus-visible{color:var(--hit);border-color:var(--hit);outline:none}
-  #drillCard .big{font-size:15px;letter-spacing:.03em}   /* 「失敗 — 三手で仕留められなかった」が1行に収まる幅 */
+  /* 「失敗 — 二回の行動で仕留められなかった」が 375px 幅で1行に収まるように、札を画面いっぱいまで広げる */
+  #drillCard .card{max-width:none}
+  #drillCard .big{font-size:15px;letter-spacing:0}
 </style>
 </head>
 <body>
@@ -128,8 +131,9 @@
         <button class="primary" id="newGame">新しい対戦</button>
         <button class="ghost" id="resign">降参</button>
         <button class="ghost" id="dRestart" hidden>やり直す</button>
-        <button class="ghost" id="dUndo" hidden>一手戻す</button>
-        <button class="primary" id="dAdvise" hidden>軍師の一手</button>
+        <button class="ghost" id="dUndo" hidden>一回戻す</button>
+        <button class="primary" id="dAdvise" hidden>軍師の助言</button>
+        <button class="ghost" id="dList" hidden>一覧へ戻る</button>
         <button class="ghost" id="reset" title="ズームを解除して等倍に戻す" hidden>ズーム解除</button>
       </div>
     </div>
@@ -159,7 +163,7 @@
 <!-- 軍議演習（?mode=drill）。形の一覧と、開始・終了の知らせ。 -->
 <div id="drillOv" hidden><div class="wrap">
   <h2>軍議演習</h2>
-  <p class="lead">大将を追い詰める典型の形を、少ない兵で試す。勝てる場面がどんな状況かを知り、対戦でその形を目指せるように。手は自分で考え、迷ったら「軍師の一手」で一つの判断を聞ける。</p>
+  <p class="lead">大将を追い詰める典型の形を、少ない兵で試す。勝てる場面がどんな状況かを知り、対戦でその形を目指せるように。行動は自分で考え、迷ったら「軍師の助言」で一つの判断を聞ける。</p>
   <div id="drillList"></div>
   <a class="back" href="./index.html">タイトルへ</a>
 </div></div>
@@ -1000,7 +1004,8 @@ function resize(){
   clampView(); applyView();                          // 拡大中の resize でも破綻しない
   fitStage();
 }
-addEventListener('resize', () => { resize(); });
+/* 画面の回転だけでなく、控え欄が出たり消えたりして下部パネルの高さが変わったときも合わせ直す。 */
+new ResizeObserver(() => { resize(); }).observe(view);
 
 /* ═════════ 対局の状態（play.html と同じ枠組み） ═════════ */
 const $ = id => document.getElementById(id);
@@ -1133,7 +1138,7 @@ async function scheduleNpc(){
   await commitMove(usiToMove(usi));
   // 退避手が2手続いたら worker が答えられていないと見て知らせる。1手なら出さない。
   fallbackRun = fallback ? fallbackRun + 1 : 0;
-  infoEl.textContent = fallbackRun >= 2 ? '対戦相手の調子が悪いようです。新しい対戦をお試しください' : '';
+  infoEl.textContent = fallbackRun >= 2 ? '敵軍の調子が悪いようです。新しい対戦をお試しください' : '';
   if (checkTerminalAfterMove('NPC')) return;
   legal = legalMoves(pos); hlDirty = true; renderStatus();
 }
@@ -1164,7 +1169,7 @@ function renderStatus(){
   if (over) return;
   const checkSide = inCheck(pos) ? pos.turn : -1;
   let t = thinking ? '敵軍の行動…' : (anim ? '…' : (pos.turn === humanColor ? '自軍の行動' : '敵軍の行動'));
-  if (drill && !thinking && !anim) t = `あと${JP_NUM[drill.lesson.moves - drill.ply]}手`;   // 演習は残りの手数を出す
+  if (drill && !thinking && !anim) t = `あと${JP_NUM[actionsLeft()]}回の行動`;   // 演習は自軍の残りの行動回数を出す
   if (!thinking && !anim && pos.turn === humanColor && selected){
     t += `・${logName(selected.kind === 'board' ? typeOf(pos.board[selected.sq]) : selected.pt)}`;
   }
@@ -1187,7 +1192,7 @@ function renderHands(){
     if (n > 1){ const b = document.createElement('span'); b.className='n'; b.textContent=n; e.appendChild(b); }
     el.appendChild(e);
   }
-  if (!any){ const s = document.createElement('span'); s.className='empty'; s.textContent='なし'; el.appendChild(s); }
+  el.hidden = !any;                       // 控えが無いあいだは枠ごと出さない
 }
 function showResult(big, sub){
   $('resultBig').textContent = big; $('resultSub').textContent = sub;
@@ -1344,6 +1349,9 @@ $('reset').addEventListener('click', () => { zoom = 1; panX = 0; panY = 0; apply
    3D・操作・ガイドは対局と同じものをそのまま使う。違うのは進行だけ：敵の応手は
    ソルバーが選び、決められた手数のうちに詰めば「仕留めた」、使い切れば「失敗」。 */
 const JP_NUM = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+/* lessons.json の moves は自軍・敵軍を合わせた数。画面には自軍の行動の回数だけを出す。 */
+const actionsOf = L => Math.ceil(L.moves / 2);
+const actionsLeft = () => Math.ceil((drill.lesson.moves - drill.ply) / 2);
 const noteEl = $('note');
 let lessons = [];
 const drillDone = new Set();             // 仕留めた形の添字。この画面にいる間だけ覚え、保存はしない
@@ -1352,7 +1360,7 @@ function showDrillList(){
   const list = $('drillList'); list.innerHTML = '';
   lessons.forEach((L, i) => {
     const b = document.createElement('button'); b.className = 'lesson' + (drillDone.has(i) ? ' done' : '');
-    for (const [cls, text] of [['nm', L.name], ['mv', `${JP_NUM[L.moves]}手` + (drillDone.has(i) ? '・仕留めた' : '')], ['tx', L.text]]){
+    for (const [cls, text] of [['nm', L.name], ['mv', `${JP_NUM[actionsOf(L)]}回の行動` + (drillDone.has(i) ? '・仕留めた' : '')], ['tx', L.text]]){
       const s = document.createElement('span'); s.className = cls; s.textContent = text; b.appendChild(s);
     }
     b.addEventListener('click', () => startDrill(i, true));
@@ -1386,7 +1394,7 @@ function startDrill(i, intro){
   noteEl.textContent = lessonNote();
   renderHands(); renderStatus(); renderLog();
   sceneDirty = true; hlDirty = true;
-  if (intro) showDrillCard(L.name, L.text, [[`あと${JP_NUM[L.moves]}手で仕留める`, hideDrillCard, true]]);
+  if (intro) showDrillCard(L.name, L.text, [[`${JP_NUM[actionsOf(L)]}回の行動で仕留める`, hideDrillCard, true]]);
 }
 /* 自軍が指した後。詰めば仕留めた、手数を使い切れば失敗、まだなら敵が最も粘る手で応じる。 */
 async function drillAfterHuman(){
@@ -1406,8 +1414,8 @@ async function drillAfterHuman(){
 }
 function finishDrill(won, sub){
   over = true; hlDirty = true; hint = null; clearSelection();
-  const n = JP_NUM[drill.lesson.moves];
-  const big = won ? `${n}手で仕留めた` : `失敗 — ${n}手で仕留められなかった`;
+  const n = JP_NUM[actionsOf(drill.lesson)];
+  const big = won ? `${n}回の行動で仕留めた` : `失敗 — ${n}回の行動で仕留められなかった`;
   turnEl.textContent = big; turnEl.classList.remove('check');
   if (won){
     drillDone.add(drill.idx);
@@ -1434,21 +1442,22 @@ function advise(){
   const mvs = winningMoves(pos, drill.lesson.moves - drill.ply);
   if (mvs.length === 0){
     hint = null;
-    noteEl.textContent = '軍師：ここからは手数のうちに仕留める手が見当たらない。一手戻すか、やり直すのも手だ。';
+    noteEl.textContent = '軍師：ここからは残りの行動で仕留める道が見当たらない。一回戻すか、やり直すのもよい。';
   } else {
     const mv = mvs[0];
     hint = { from: isDrop(mv) ? -1 : moveFrom(mv), to: moveTo(mv) };
-    noteEl.textContent = `軍師ならこう指す：${logLine(pos, mv).replace(/^自軍(の|が)/, '')}。ほかの手もあり得る。`;
+    noteEl.textContent = `軍師ならこう指す：${logLine(pos, mv).replace(/^自軍(の|が)/, '')}。ほかの行動もあり得る。`;
   }
   clearSelection(); hlDirty = true; renderStatus();
 }
 $('dRestart').addEventListener('click', () => { if (drill && !anim) startDrill(drill.idx, false); });
 $('dUndo').addEventListener('click', undoDrill);
 $('dAdvise').addEventListener('click', advise);
+$('dList').addEventListener('click', showDrillList);   // 途中でも抜けられる。次に形を選ぶと初めから
 async function initDrill(){
   document.title = `${GAME_NAME} 軍議演習`;
   for (const id of ['newGame', 'resign']) $(id).hidden = true;
-  for (const id of ['dRestart', 'dUndo', 'dAdvise', 'note']) $(id).hidden = false;
+  for (const id of ['dRestart', 'dUndo', 'dAdvise', 'dList', 'note']) $(id).hidden = false;
   // 形を選ぶまでは何も指せない盤を置いておく（一覧の下なので見えない）
   humanColor = BLACK; pos = parseSfen(START_SFEN); over = true; legal = [];
   renderHands(); turnEl.textContent = '';
