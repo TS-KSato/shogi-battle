@@ -39,6 +39,7 @@ guide.html         ガイド（兵・ルール・操作・困ったとき）。�
                    iframe で重ねて開く
 src/
   name.js          ゲーム名の定数。index と play3d と guide が参照する
+  lessons.json     勝ちパターン学習の局面6つ。画面は未作成
   shogi.js         ルール層。盤面・合法手・終局判定・千日手。依存なし
   engine.js        NPC の探索と評価。shogi.js のみに依存
   npc.js           本体側から NPC を呼ぶ窓口（退避処理つき）
@@ -53,6 +54,7 @@ assets/
 test/
   shogi.test.mjs   ルール層の検証（perft・禁じ手・千日手）
   engine.test.mjs  NPC の検証（戦術・合法性・時間・終局）
+  lessons.test.mjs 学習局面の検証（手数ちょうどで詰む・短い勝ちが無い）
 tools/
   guide-icons.mjs  ガイドの兵の絵を GLB から生成する
 ```
@@ -64,6 +66,7 @@ node test/shogi.test.mjs           # 数秒
 node test/shogi.test.mjs --full    # perft 深さ5まで。約40秒
 node test/engine.test.mjs          # 約1分
 node test/engine.test.mjs --games  # 自己対局で難易度の順序も確認。数分
+node test/lessons.test.mjs         # 学習局面。数秒
 ```
 
 `shogi.js` を変更したら `--full` まで通すこと。

@@ -29,6 +29,7 @@ play3d.html              対局画面（3D）。UI・描画・演出をこの1�
 guide.html               ガイド。兵・ルール・操作・困ったときの4区分。
                          対局画面からは「？」で iframe に重ねて開く
 src/name.js              ゲーム名。index・play3d・guide のタブ名と見出しで共有
+src/lessons.json         勝ちパターン学習の局面6つ（SFEN・名前・手数・説明）。画面は未作成
 src/shogi.js             ルール層   盤面・合法手・終局判定・千日手
 src/engine.js            思考層     NPC の探索と評価
 src/npc.js               接続層     本体から Worker を呼ぶ窓口。退避処理を持つ
@@ -39,7 +40,7 @@ assets/logo.png          タイトルのロゴ（任意。無ければ文字の�
 assets/stage/honjin.jpg  舞台絵。対局画面の背景
 assets/guide/*.png       ガイドの兵の絵10枚。tools/guide-icons.mjs で GLB から生成
 assets/guide/rule-*.jpg  ガイドのルールの実写6枚。play3d.html?sfen= で撮る
-test/                    ルール層と NPC のテスト
+test/                    ルール層・NPC・学習局面のテスト
 tools/guide-icons.mjs    ガイドの兵の絵の生成（配信しない）
 ```
 
@@ -70,6 +71,7 @@ node test/shogi.test.mjs          # ルール層（数秒）
 node test/shogi.test.mjs --full   # perft 深さ5まで（約40秒）
 node test/engine.test.mjs         # NPC（約1分）
 node test/engine.test.mjs --games # 自己対局で難易度の順序も見る（数分）
+node test/lessons.test.mjs        # 学習局面が決められた手数ちょうどで詰むこと（数秒）
 ```
 
 `src/shogi.js` に触ったら、`--full` まで必ず通してください。
