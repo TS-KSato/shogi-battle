@@ -132,7 +132,7 @@
         <button class="ghost" id="resign">降参</button>
         <button class="ghost" id="dRestart" hidden>やり直す</button>
         <button class="ghost" id="dUndo" hidden>一回戻す</button>
-        <button class="primary" id="dAdvise" hidden>軍師の助言</button>
+        <button class="primary" id="dAdvise" hidden>軍師の一手</button>
         <button class="ghost" id="dList" hidden>一覧へ戻る</button>
         <button class="ghost" id="reset" title="ズームを解除して等倍に戻す" hidden>ズーム解除</button>
       </div>
@@ -163,7 +163,7 @@
 <!-- 軍議演習（?mode=drill）。形の一覧と、開始・終了の知らせ。 -->
 <div id="drillOv" hidden><div class="wrap">
   <h2>軍議演習</h2>
-  <p class="lead">大将を追い詰める典型の形を、少ない兵で試す。勝てる場面がどんな状況かを知り、対戦でその形を目指せるように。行動は自分で考え、迷ったら「軍師の助言」で一つの判断を聞ける。</p>
+  <p class="lead">大将を追い詰める典型の形を、少ない兵で試す。勝てる場面がどんな状況かを知り、対戦でその形を目指せるように。行動は自分で考え、迷ったら「軍師の一手」で一つの判断を聞ける。</p>
   <div id="drillList"></div>
   <a class="back" href="./index.html">タイトルへ</a>
 </div></div>
@@ -1158,7 +1158,7 @@ function checkTerminalAfterMove(mover){
     over = true; hlDirty = true;
     if (rep === 'draw') showResult('引き分け', '同じ配置が4回くり返されたため');
     else showResult(rep === humanColor ? 'あなたの負け' : 'あなたの勝ち',
-                    rep === humanColor ? '大将に迫り続けたため、あなたの負け' : '敵軍が大将に迫り続けたため、あなたの勝ち');
+                    rep === humanColor ? '大将に迫り続けたため' : '敵軍が大将に迫り続けたため');
     return true;
   }
   renderStatus(); return false;
@@ -1340,7 +1340,7 @@ $('resultTitle').addEventListener('click', () => { location.href = './index.html
 $('resign').addEventListener('click', () => {
   if (over) return; over = true; thinking = false; hlDirty = true;
   closePromo();                                 // 成り確認の途中で投了しても盤の表示と選択を残さない
-  showResult('あなたの負け', 'あなたの降参');
+  showResult('あなたの負け', '降参した');
 });
 $('newGame').addEventListener('click', newGame);
 $('reset').addEventListener('click', () => { zoom = 1; panX = 0; panY = 0; applyView(); });
@@ -1442,7 +1442,7 @@ function advise(){
   const mvs = winningMoves(pos, drill.lesson.moves - drill.ply);
   if (mvs.length === 0){
     hint = null;
-    noteEl.textContent = '軍師：ここからは残りの行動で仕留める道が見当たらない。一回戻すか、やり直すのもよい。';
+    noteEl.textContent = '軍師：ここからは残りの行動で仕留める手が見当たらない。一回戻すか、やり直すのも手だ。';
   } else {
     const mv = mvs[0];
     hint = { from: isDrop(mv) ? -1 : moveFrom(mv), to: moveTo(mv) };
