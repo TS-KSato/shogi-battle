@@ -90,6 +90,29 @@
   #promoNo.pick{border-color:#f0ece0}
   #promoGo{width:100%;margin-top:8px;padding:10px}
   #promoGo:disabled{opacity:.4;cursor:default}
+
+  /* 軍議演習。形の名前と説明、または軍師の一手を出す行。高さを3行に固定して、
+     文の長さで盤の高さが変わらないようにする。 */
+  #note{font-size:11px;line-height:1.5;height:4.5em;overflow:hidden;color:var(--dim);margin:-2px 0 7px}
+  #note[hidden]{display:none}
+  /* 形の一覧。ガイドと同じく盤の上に重ね、選ぶと閉じる。 */
+  #drillOv{position:fixed;inset:0;background:var(--bg);z-index:20;overflow-y:auto;
+    padding:calc(14px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right))
+            calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left))}
+  #drillOv[hidden]{display:none}
+  #drillOv .wrap{max-width:360px;margin:0 auto}
+  #drillOv h2{font-size:16px;font-weight:500;letter-spacing:.12em;margin:6px 0 6px}
+  #drillOv .lead{color:var(--dim);font-size:11px;line-height:1.7;margin:0 0 14px}
+  .lesson{display:block;width:100%;text-align:left;margin-bottom:8px;padding:10px 12px;line-height:1.5}
+  .lesson .nm{font-size:14px;color:#f4e6ae}
+  .lesson .mv{float:right;color:var(--dim);font-size:11px}
+  .lesson .tx{display:block;color:var(--dim);font-size:11px;margin-top:2px}
+  .lesson.done{border-color:var(--hit)} .lesson.done .mv{color:var(--hit)}
+  #drillOv .back{display:block;text-align:center;color:var(--dim);font-size:12px;margin-top:14px;
+    padding:12px;border:1px solid var(--line);border-radius:3px;text-decoration:none;
+    -webkit-tap-highlight-color:transparent}
+  #drillOv .back:hover,#drillOv .back:focus-visible{color:var(--hit);border-color:var(--hit);outline:none}
+  #drillCard .big{font-size:15px;letter-spacing:.03em}   /* 「失敗 — 三手で仕留められなかった」が1行に収まる幅 */
 </style>
 </head>
 <body>
@@ -97,12 +120,16 @@
   <div id="view"><button id="help" title="ガイドを開く">？</button></div>
   <div id="panel">
     <div id="turnRow"><span id="turn">読み込み中…</span><span id="info"></span></div>
+    <div id="note" hidden></div>
     <div id="log"><div></div><div></div><div></div><div></div><div></div></div>
     <div class="myhand" id="handBottom"></div>
     <div class="controls">
       <div class="grp">
         <button class="primary" id="newGame">新しい対戦</button>
         <button class="ghost" id="resign">降参</button>
+        <button class="ghost" id="dRestart" hidden>やり直す</button>
+        <button class="ghost" id="dUndo" hidden>一手戻す</button>
+        <button class="primary" id="dAdvise" hidden>軍師の一手</button>
         <button class="ghost" id="reset" title="ズームを解除して等倍に戻す" hidden>ズーム解除</button>
       </div>
     </div>
@@ -129,6 +156,18 @@
   <div class="rowb"><button id="resultClose" class="primary">閉じる</button><button id="resultTitle">タイトルへ</button></div>
 </div></div>
 
+<!-- 軍議演習（?mode=drill）。形の一覧と、開始・終了の知らせ。 -->
+<div id="drillOv" hidden><div class="wrap">
+  <h2>軍議演習</h2>
+  <p class="lead">大将を追い詰める典型の形を、少ない兵で試す。勝てる場面がどんな状況かを知り、対戦でその形を目指せるように。手は自分で考え、迷ったら「軍師の一手」で一つの判断を聞ける。</p>
+  <div id="drillList"></div>
+  <a class="back" href="./index.html">タイトルへ</a>
+</div></div>
+<div class="overlay" id="drillCard"><div class="card">
+  <p class="big" id="drillBig"></p><p id="drillSub"></p>
+  <div class="rowb" id="drillBtns"></div>
+</div></div>
+
 <!-- Three.js r128。GitHub Pages では CDN 直リンクで届く。 -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <!-- スキン付きGLBの読み込みと複製に使う。届かなければ骨なしGLBへ退避する。 -->
@@ -143,8 +182,12 @@ import {
   BLACK, WHITE, EMPTY, FU, KY, KE, GI, KI, KA, HI, TO, NY, NK, NG, UM, RY,
 } from './src/shogi.js';
 import { Npc } from './src/npc.js';
+import { winningMoves, toughestReply } from './src/drill.js';
 import { GAME_NAME } from './src/name.js';
 document.title = GAME_NAME;
+/* 軍議演習。src/lessons.json の局面で、決められた手数のうちに敵の大将を仕留める。
+   敵の応手はソルバー（src/drill.js）が最も長く粘る手を選び、NPC は使わない。 */
+const DRILL = new URLSearchParams(location.search).get('mode') === 'drill';
 
 /* ═════════ ルール層まわりの表記（play.html と共通） ═════════ */
 const KANJI = [];
@@ -645,6 +688,7 @@ const selTile   = tile(0xc9a227, 0.44, 0.92, 0.012);
 const checkTile = tile(0xe0653f, 0.50, 0.92, 0.012);
 const lastTiles = [tile(0xffffff, 0.34, 0.92, 0.011), tile(0xffffff, 0.34, 0.92, 0.011)];  // 色は指した側の陣営色に差し替える
 const toTile    = tile(0x6fd8c8, 0.50, 0.92, 0.012);   // 成り確認中の移動先。選択中の黄と区別する
+const hintTiles = [tile(0x6fd8c8, 0.50, 0.92, 0.0115), tile(0x6fd8c8, 0.50, 0.92, 0.0115)];   // 軍師の一手（演習）
 const discGeom  = new THREE.CircleGeometry(0.12, 20), discBase = new THREE.CircleGeometry(0.19, 20);
 const ringGeom  = new THREE.RingGeometry(0.31, 0.43, 22), ringBase = new THREE.RingGeometry(0.27, 0.47, 22);
 const discPool  = Array.from({length:81}, () => mark(discGeom, 0xc9a227, 0.95, 0.014, 5, discBase, 0.80));
@@ -654,7 +698,11 @@ function place(mesh, sq){ const w = worldOfSq(sq); mesh.position.set(w.x, mesh.u
 function layoutHighlights(){
   discPool.forEach(m => m.visible=false); ringPool.forEach(m => m.visible=false);
   lastTiles.forEach(m => m.visible=false); selTile.visible=false; checkTile.visible=false;
-  toTile.visible = false;
+  toTile.visible = false; hintTiles.forEach(m => m.visible=false);
+  if (hint){
+    if (hint.from >= 0){ place(hintTiles[0], hint.from); hintTiles[0].visible=true; }
+    place(hintTiles[1], hint.to); hintTiles[1].visible=true;
+  }
   if (lastMove){
     // 直前の手は「指した側の陣営色」。選択中・合法手の黄色と区別して「起きたこと」を示す。
     const c = teamOf(lastMove.color) === 0 ? COLOR[0] : COLOR[1];
@@ -957,7 +1005,7 @@ addEventListener('resize', () => { resize(); });
 /* ═════════ 対局の状態（play.html と同じ枠組み） ═════════ */
 const $ = id => document.getElementById(id);
 const turnEl = $('turn'), infoEl = $('info');
-const npc = new Npc();
+const npc = DRILL ? null : new Npc();    // 演習では Worker を起こさない
 let fallbackRun = 0;                     // NPC の退避手が何手続いているか
 let pos, humanColor, level;
 let legal = [], selected = null, targets = new Map();
@@ -967,6 +1015,7 @@ let logLines = [];                       // 戦闘ログ（表現層。直近2�
 let repKeys = [], repChecks = [];        // 千日手の照合用。開始局面から毎手の局面キーと王手の有無
 let anim = null;                         // {from,to,moverColor,cap,capColor,capType,kind,t,dur,resolve}
 let sceneDirty = true, hlDirty = true;
+let drill = null, hint = null;           // 演習の進み {lesson, idx, ply, history} と、軍師の一手の印 {from,to}
 
 /* ─ 選択と合法手の表示 ─ */
 function clearSelection(){ selected = null; targets = new Map(); }
@@ -1039,7 +1088,7 @@ function commitMove(mv){
   if (inCheck(pos)) line += '。大将に迫る';
   logLines.push(line);
   repKeys.push(positionKey(pos)); repChecks.push(inCheck(pos));
-  npc.moved(toSfen(pos));
+  if (npc) npc.moved(toSfen(pos));
   lastMove = { from, to, color: moverColor };
   renderHands(); renderLog();
   const kind = isDrop(mv) ? 'drop' : (cap ? 'capture' : 'move');
@@ -1051,7 +1100,12 @@ function commitMove(mv){
 }
 async function humanPlay(mv){
   clearSelection(); hlDirty = true;
+  if (drill){
+    drill.history.push({ pos: clone(pos), ply: drill.ply, logLen: logLines.length, lastMove });   // 一手戻す用
+    hint = null;
+  }
   await commitMove(mv);
+  if (drill){ drillAfterHuman(); return; }
   if (checkTerminalAfterMove('あなた')) return;
   scheduleNpc();
 }
@@ -1110,6 +1164,7 @@ function renderStatus(){
   if (over) return;
   const checkSide = inCheck(pos) ? pos.turn : -1;
   let t = thinking ? '敵軍の行動…' : (anim ? '…' : (pos.turn === humanColor ? '自軍の行動' : '敵軍の行動'));
+  if (drill && !thinking && !anim) t = `あと${JP_NUM[drill.lesson.moves - drill.ply]}手`;   // 演習は残りの手数を出す
   if (!thinking && !anim && pos.turn === humanColor && selected){
     t += `・${logName(selected.kind === 'board' ? typeOf(pos.board[selected.sq]) : selected.pt)}`;
   }
@@ -1285,6 +1340,122 @@ $('resign').addEventListener('click', () => {
 $('newGame').addEventListener('click', newGame);
 $('reset').addEventListener('click', () => { zoom = 1; panX = 0; panY = 0; applyView(); });
 
+/* ═════════ 軍議演習 ═════════
+   3D・操作・ガイドは対局と同じものをそのまま使う。違うのは進行だけ：敵の応手は
+   ソルバーが選び、決められた手数のうちに詰めば「仕留めた」、使い切れば「失敗」。 */
+const JP_NUM = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+const noteEl = $('note');
+let lessons = [];
+const drillDone = new Set();             // 仕留めた形の添字。この画面にいる間だけ覚え、保存はしない
+
+function showDrillList(){
+  const list = $('drillList'); list.innerHTML = '';
+  lessons.forEach((L, i) => {
+    const b = document.createElement('button'); b.className = 'lesson' + (drillDone.has(i) ? ' done' : '');
+    for (const [cls, text] of [['nm', L.name], ['mv', `${JP_NUM[L.moves]}手` + (drillDone.has(i) ? '・仕留めた' : '')], ['tx', L.text]]){
+      const s = document.createElement('span'); s.className = cls; s.textContent = text; b.appendChild(s);
+    }
+    b.addEventListener('click', () => startDrill(i, true));
+    list.appendChild(b);
+  });
+  $('drillOv').hidden = false;
+}
+function showDrillCard(big, sub, buttons){
+  $('drillBig').textContent = big; $('drillSub').textContent = sub;
+  const row = $('drillBtns'); row.innerHTML = '';
+  for (const [label, fn, primary] of buttons){
+    const b = document.createElement('button'); b.textContent = label;
+    if (primary) b.className = 'primary';
+    b.addEventListener('click', fn); row.appendChild(b);
+  }
+  $('drillCard').classList.add('on');
+}
+const hideDrillCard = () => $('drillCard').classList.remove('on');
+const lessonNote = () => `${drill.lesson.name}：${drill.lesson.text}`;
+
+function startDrill(i, intro){
+  const L = lessons[i];
+  drill = { idx: i, lesson: L, ply: 0, history: [] };
+  humanColor = BLACK; flip = false; placeScale();
+  pos = parseSfen(L.sfen);
+  legal = legalMoves(pos); clearSelection(); lastMove = null; hint = null;
+  thinking = false; over = false; anim = null;
+  logLines = []; repKeys = [positionKey(pos)]; repChecks = [inCheck(pos)];
+  closePromo(); hideDrillCard(); infoEl.textContent = '';
+  $('drillOv').hidden = true;
+  noteEl.textContent = lessonNote();
+  renderHands(); renderStatus(); renderLog();
+  sceneDirty = true; hlDirty = true;
+  if (intro) showDrillCard(L.name, L.text, [[`あと${JP_NUM[L.moves]}手で仕留める`, hideDrillCard, true]]);
+}
+/* 自軍が指した後。詰めば仕留めた、手数を使い切れば失敗、まだなら敵が最も粘る手で応じる。 */
+async function drillAfterHuman(){
+  drill.ply++; hint = null; noteEl.textContent = lessonNote();
+  const left = drill.lesson.moves - drill.ply;
+  const replies = legalMoves(pos);
+  if (replies.length === 0 && inCheck(pos)){ finishDrill(true); return; }
+  if (replies.length === 0){ finishDrill(false, '敵軍に動ける兵がなくなり、大将を追い詰められない'); return; }
+  if (left <= 0){ finishDrill(false); return; }
+  thinking = true; hlDirty = true; renderStatus();
+  await new Promise(requestAnimationFrame);          // 「敵軍の行動…」を一度描いてから読む
+  const r = toughestReply(pos, left);
+  thinking = false;
+  await commitMove(r);
+  drill.ply++;
+  legal = legalMoves(pos); hlDirty = true; renderStatus();
+}
+function finishDrill(won, sub){
+  over = true; hlDirty = true; hint = null; clearSelection();
+  const n = JP_NUM[drill.lesson.moves];
+  const big = won ? `${n}手で仕留めた` : `失敗 — ${n}手で仕留められなかった`;
+  turnEl.textContent = big; turnEl.classList.remove('check');
+  if (won){
+    drillDone.add(drill.idx);
+    showDrillCard(big, sub || drill.lesson.name, [['一覧へ戻る', showDrillList, true]]);
+  } else {
+    showDrillCard(big, sub || drill.lesson.name,
+      [['やり直す', () => startDrill(drill.idx, false), true], ['一覧へ戻る', showDrillList]]);
+  }
+}
+/* 自軍の直前の手まで戻す（敵の応手も一緒に消える）。 */
+function undoDrill(){
+  if (!drill || thinking || anim || !drill.history.length) return;
+  const s = drill.history.pop();
+  pos = s.pos; drill.ply = s.ply; logLines.length = s.logLen; lastMove = s.lastMove;
+  repKeys.length = s.logLen + 1; repChecks.length = s.logLen + 1;
+  over = false; hint = null; hideDrillCard(); closePromo(); clearSelection();
+  noteEl.textContent = lessonNote();
+  legal = legalMoves(pos); renderHands(); renderLog(); renderStatus();
+  sceneDirty = true; hlDirty = true;
+}
+/* 軍師の一手。残りの手数で仕留められる手を1つだけ示す。一つの判断として書き、他の手を閉ざさない。 */
+function advise(){
+  if (!drill || over || thinking || anim || pos.turn !== humanColor) return;
+  const mvs = winningMoves(pos, drill.lesson.moves - drill.ply);
+  if (mvs.length === 0){
+    hint = null;
+    noteEl.textContent = '軍師：ここからは手数のうちに仕留める手が見当たらない。一手戻すか、やり直すのも手だ。';
+  } else {
+    const mv = mvs[0];
+    hint = { from: isDrop(mv) ? -1 : moveFrom(mv), to: moveTo(mv) };
+    noteEl.textContent = `軍師ならこう指す：${logLine(pos, mv).replace(/^自軍(の|が)/, '')}。ほかの手もあり得る。`;
+  }
+  clearSelection(); hlDirty = true; renderStatus();
+}
+$('dRestart').addEventListener('click', () => { if (drill && !anim) startDrill(drill.idx, false); });
+$('dUndo').addEventListener('click', undoDrill);
+$('dAdvise').addEventListener('click', advise);
+async function initDrill(){
+  document.title = `${GAME_NAME} 軍議演習`;
+  for (const id of ['newGame', 'resign']) $(id).hidden = true;
+  for (const id of ['dRestart', 'dUndo', 'dAdvise', 'note']) $(id).hidden = false;
+  // 形を選ぶまでは何も指せない盤を置いておく（一覧の下なので見えない）
+  humanColor = BLACK; pos = parseSfen(START_SFEN); over = true; legal = [];
+  renderHands(); turnEl.textContent = '';
+  lessons = await (await fetch('./src/lessons.json')).json();
+  showDrillList();
+}
+
 /* ═════════ 新規対局 ═════════ */
 function newGame(){
   // 手番と強さはタイトル画面から ?side= ?level= で渡る。無い・不正なら先手・ふつう。
@@ -1302,7 +1473,7 @@ function newGame(){
   repKeys = [positionKey(pos)]; repChecks = [inCheck(pos)];
   $('resultOv').classList.remove('on'); closePromo();
   fallbackRun = 0; infoEl.textContent = '';
-  npc.newGame();
+  if (npc) npc.newGame();
   renderHands(); renderStatus(); renderLog();
   sceneDirty = true; hlDirty = true;
   if (pos.turn === humanColor){ legal = legalMoves(pos); renderStatus(); hlDirty = true; }
@@ -1336,7 +1507,7 @@ function loop(){
 }
 
 resize();
-newGame();
+if (DRILL) initDrill(); else newGame();
 loop();
 </script>
 </body>

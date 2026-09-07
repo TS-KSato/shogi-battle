@@ -34,12 +34,14 @@
 ```
 index.html         タイトル。全画面の背景絵、ロゴ、順番と強さの選択、
                    ガイドの入口。開いた時点で兵のGLBを先読みする
-play3d.html        対局画面
+play3d.html        対局画面。?mode=drill で軍議演習（大将を追い詰める形を
+                   6局面で学ぶ。敵の応手はソルバーが最も粘る手を選ぶ）
 guide.html         ガイド（兵・ルール・操作・困ったとき）。対局画面からは
                    iframe で重ねて開く
 src/
   name.js          ゲーム名の定数。index と play3d と guide が参照する
-  lessons.json     勝ちパターン学習の局面6つ。画面は未作成
+  lessons.json     軍議演習の局面6つ（SFEN・名前・手数・説明）
+  drill.js         軍議演習のソルバー。手数内の詰みと最も粘る応手。shogi.js のみに依存
   shogi.js         ルール層。盤面・合法手・終局判定・千日手。依存なし
   engine.js        NPC の探索と評価。shogi.js のみに依存
   npc.js           本体側から NPC を呼ぶ窓口（退避処理つき）

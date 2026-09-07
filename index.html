@@ -44,6 +44,9 @@
     color:#f4e6ae;background:#2b2718;border:1px solid var(--hit);border-radius:3px;
     padding:12px 6px;min-height:52px;cursor:pointer;-webkit-tap-highlight-color:transparent}
   select:focus-visible,button:focus-visible{outline:2px solid var(--hit);outline-offset:2px}
+  /* 軍議演習の入口。出陣の下に、控えめな見た目で置く。 */
+  button.sub{margin-top:8px;font-size:12px;letter-spacing:.06em;min-height:44px;
+    color:var(--ink);background:#1a1b18;border-color:var(--line)}
 
   /* ガイドの4つの入口。出陣の下に小さく並べる。 */
   .guide{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:22px}
@@ -76,6 +79,7 @@
     </select>
   </div>
   <button id="start">出陣する</button>
+  <button id="drill" class="sub">軍議演習 — 大将を追い詰める形を学ぶ</button>
 
   <div class="guide">
     <a href="./guide.html#hei">兵</a>
@@ -102,6 +106,7 @@ document.getElementById('start').addEventListener('click', () => {
   const level = document.getElementById('level').value;
   location.href = `./play3d.html?side=${side}&level=${level}`;
 });
+document.getElementById('drill').addEventListener('click', () => { location.href = './play3d.html?mode=drill'; });
 
 /* 対局画面が最初に読む兵のモデルと舞台絵を、この画面のうちに先読みしておく。
    prefetch は HTTP キャッシュに入るので、play3d.html の GLTFLoader の取得がそれを使う。 */
