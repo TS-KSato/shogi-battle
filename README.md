@@ -64,12 +64,14 @@ tools/
 ## テスト
 
 ```bash
-node test/shogi.test.mjs           # 数秒
-node test/shogi.test.mjs --full    # perft 深さ5まで。約40秒
-node test/engine.test.mjs          # 約1分
-node test/engine.test.mjs --games  # 自己対局で難易度の順序も確認。数分
-node test/lessons.test.mjs         # 学習局面。数秒
+node test/shogi.test.mjs           # 31件。数秒
+node test/shogi.test.mjs --full    # 35件。perft 深さ5まで。約40秒
+node test/engine.test.mjs          # 9件。約1分
+node test/engine.test.mjs --games  # 11件。自己対局で難易度の順序も確認。約3分45秒
+node test/lessons.test.mjs         # 36件。数秒
 ```
+
+自己対局は乱数の種と時計を固定しているので、毎回同じ対戦・同じ結果になる。
 
 `shogi.js` を変更したら `--full` まで通すこと。
 perft の値が1つでも合わなければ、合法手生成が壊れている。
@@ -117,7 +119,11 @@ python3 -m http.server 8000
 
 ## 実装していないもの
 
-持将棋、詰将棋モード、進化や決着の演出（討ち取りの演出だけ実装済み）、音。
-iOS Safari での Worker の動作は未検証。
+- 持将棋。実装しない方針
+- 既存の詰将棋の転載。局面は自作し、`test/lessons.test.mjs` で検証している
+- 進化や決着の演出。討ち取りの演出だけ実装済みで、残りは検討のうえ
+  実装しない方針
+- 音
+- iOS Safari での Worker の動作は未検証
 
 開発者向けの詳細は `CLAUDE.md` を参照。
