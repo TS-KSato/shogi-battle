@@ -40,9 +40,10 @@ assets/title.jpg         タイトルの背景絵（任意。無ければ中央�
 assets/logo.png          タイトルのロゴ（任意。無ければ文字の見出し）
 assets/stage/honjin.jpg  舞台絵。対局画面の背景
 assets/guide/*.png       ガイドの兵の絵10枚。tools/guide-icons.mjs で GLB から生成
-assets/guide/rule-*.jpg  ガイドのルールの実写6枚。play3d.html?sfen= で撮る
+assets/guide/rule-*.jpg  ガイドのルールの実写6枚。tools/guide-photos.mjs で撮る
 test/                    ルール層・NPC・学習局面のテスト
 tools/guide-icons.mjs    ガイドの兵の絵の生成（配信しない）
+tools/guide-photos.mjs   ガイドのルールの写真の撮影。局面・手順・画面サイズ・拡大率を持つ（配信しない）
 ```
 
 ---

@@ -63,6 +63,7 @@ test/
   lessons.test.mjs 学習局面の検証（手数ちょうどで詰む・短い勝ちが無い）
 tools/
   guide-icons.mjs  ガイドの兵の絵を GLB から生成する
+  guide-photos.mjs ガイドのルールの写真を対局画面から撮る（局面と手順を持つ）
 ```
 
 ## テスト
@@ -92,7 +93,7 @@ python3 -m http.server 8000
 ```
 
 `play3d.html?sfen=<SFEN>` で任意の局面から開ける。ガイドの実写もこれで
-撮っている。
+撮っている（`tools/guide-photos.mjs`）。
 
 ## 内部表記
 
