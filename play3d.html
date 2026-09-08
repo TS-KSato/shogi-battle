@@ -48,10 +48,12 @@
 
   /* 下部の自分の持ち駒。盤上と同じ兵の姿に、足元へ小さく漢字を添える。
      敵の持ち駒は 3D 空間（奥の地面）に出すので、上部の帯は置かない。 */
-  /* 兵の絵の大きさは変えず、指で押せるよう当たりを44px角に広げる。 */
-  .koma{position:relative;width:44px;height:44px;cursor:pointer;
-    background-image:var(--sol-me);background-size:auto 30px;
-    background-repeat:no-repeat;background-position:center top}
+  /* 兵の絵の大きさは変えず、指で押せるよう当たりを44px角に広げる。絵は暗い背景に沈むので、
+     ガイドの兵の絵と同じく地面の色（舞台絵の土の平均色）の下地を敷く。絵は --pic で渡す。 */
+  .koma{position:relative;width:44px;height:44px;cursor:pointer}
+  .koma::before{content:"";position:absolute;left:50%;top:0;width:32px;height:32px;
+    transform:translateX(-50%);border-radius:6px;
+    background:#aa884b var(--pic) center 1px/auto 30px no-repeat}
   .koma .k{position:absolute;left:50%;bottom:0;transform:translateX(-50%);
     font-size:10px;font-weight:700;line-height:1.25;padding:0 2px;border-radius:2px;
     color:#241a11;background:rgba(245,230,190,.9);
@@ -84,6 +86,17 @@
   .overlay.on{display:flex}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:6px;
     padding:18px;max-width:300px;width:100%;text-align:center}
+  /* 結果の出方。対局は暗転のあとに札が下から浮かび上がる。演習は暗転と札を同時に。
+     display:none から .on になるたびにアニメーションが最初から走る。 */
+  @keyframes dim{from{background:rgba(0,0,0,0)}}
+  @keyframes rise{from{opacity:0;transform:translateY(22px)}}
+  #resultOv.on{animation:dim .35s ease-out both}
+  #resultOv.on .card{animation:rise .4s ease-out .35s both}
+  #drillCard.on{animation:dim .4s ease-out both}
+  #drillCard.on .card{animation:rise .4s ease-out both}
+  @media (prefers-reduced-motion: reduce){
+    #resultOv.on,#resultOv.on .card,#drillCard.on,#drillCard.on .card{animation:none}
+  }
   .card p{margin:0 0 14px;font-size:13px}
   .card .big{font-size:16px;color:var(--hit);letter-spacing:.06em;margin-bottom:6px}
   .rowb{display:flex;gap:8px}.rowb button{flex:1}
@@ -195,12 +208,17 @@ import {
   BLACK, WHITE, EMPTY, FU, KY, KE, GI, KI, KA, HI, TO, NY, NK, NG, UM, RY,
 } from './src/shogi.js';
 import { Npc } from './src/npc.js';
+import { LEVELS } from './src/engine.js';       // 思考時間の上限だけを見る。探索はこの画面では動かさない
 import { winningMoves, toughestReply } from './src/drill.js';
 import { GAME_NAME } from './src/name.js';
 document.title = GAME_NAME;
 /* 軍議演習。src/lessons.json の局面で、決められた手数のうちに敵の大将を仕留める。
    敵の応手はソルバー（src/drill.js）が最も長く粘る手を選び、NPC は使わない。 */
 const DRILL = new URLSearchParams(location.search).get('mode') === 'drill';
+/* 敵軍が応じるまでの間（ミリ秒）。NPC が手を返してから、この範囲の無作為な時間を待って
+   盤に反映する。思考が上限（LEVELS[level].ms）を超えた分は差し引き、思考と合わせて
+   最低 REPLY_WAIT_MS[0] は待つ。演習には使わない。 */
+const REPLY_WAIT_MS = [1000, 5000];
 
 /* ═════════ ルール層まわりの表記（play.html と共通） ═════════ */
 const KANJI = [];
@@ -1128,7 +1146,12 @@ async function humanPlay(mv){
 async function scheduleNpc(){
   thinking = true; legal = []; hlDirty = true; renderStatus();
   const sfen = toSfen(pos);
+  const t0 = Date.now();
   let res; try { res = await npc.think(sfen, level); } catch { res = null; }
+  // 人が考える間を作る。思考が長引いた分は差し引く
+  const took = Date.now() - t0, overrun = Math.max(0, took - LEVELS[level].ms);
+  const wait = REPLY_WAIT_MS[0] + Math.random() * (REPLY_WAIT_MS[1] - REPLY_WAIT_MS[0]);
+  await new Promise(r => setTimeout(r, Math.max(wait - overrun, REPLY_WAIT_MS[0] - took, 0)));
   thinking = false;
   if (over || toSfen(pos) !== sfen) return;              // 投了・新規対局で局面が変わっていたら破棄
 
@@ -1195,7 +1218,7 @@ function renderHands(){
   for (const t of HAND_ORDER){
     const n = pos.hands[humanColor][t]; if (!n) continue; any = true;
     const e = document.createElement('div'); e.className = 'koma'; e.dataset.pt = t;
-    const ic = handIcons[BASE_NAME[t]]; if (ic) e.style.backgroundImage = ic;   // 駒種ごとのモデル
+    const ic = handIcons[BASE_NAME[t]]; if (ic) e.style.setProperty('--pic', ic);   // 駒種ごとのモデル
     const k = document.createElement('span'); k.className = 'k'; k.textContent = KANJI[t]; e.appendChild(k);
     if (selected && selected.kind==='hand' && selected.pt===t) e.classList.add('sel');
     if (n > 1){ const b = document.createElement('span'); b.className='n'; b.textContent=n; e.appendChild(b); }
