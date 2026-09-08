@@ -10,6 +10,9 @@
  * 枠は全枚 240×280 で共通。カメラの距離と拡大率も全枚で共通にするので、兵の背丈が
  * 揃っていれば絵の中の見かけの大きさも揃う。各枚は不透明な画素の範囲の中心を枠の中心に置く。
  *
+ * 出力の直前に COLORS 色へ減色する（メディアンカットで色を決め、誤差拡散で割り当てる）。
+ * 表示は 60px 幅なので見分けがつかず、フルカラーの PNG より 6 分の 1 ほど軽い。透明は保つ。
+ *
  * 必要なもの：playwright-core と Chromium。playwright-core が別の場所にあるなら
  * NODE_PATH で指す。Chromium の場所は CHROME で指定できる。CDN に届かない環境では
  * THREE_LIBS に three.min.js / GLTFLoader.js / SkeletonUtils.js を置いたディレクトリを指すと
@@ -17,6 +20,7 @@
  */
 import http from 'http';
 import path from 'path';
+import zlib from 'zlib';
 import { createRequire } from 'module';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync, createReadStream } from 'fs';
 
@@ -24,6 +28,7 @@ const require = createRequire(import.meta.url);
 const { chromium } = require('playwright-core');
 const ROOT = path.resolve(new URL('..', import.meta.url).pathname);
 const OUT = path.join(ROOT, 'assets/guide');
+const COLORS = 128;                        // 減色後の色数（透明の1色を含む）
 
 /* 出力名 → モデル。side は向きと色。extra は添える静止形状とその位置（play3d.html の
    NOBORI_SIDE / NOBORI_BACK / TAIHO_SIDE と同じ。駒の全高 0.7026 に対する比）。 */
@@ -140,14 +145,79 @@ const shots = await page.evaluate(async ({ items, RENDER_W, RENDER_H, FRAME_W, F
     const out = document.createElement('canvas'); out.width = FRAME_W; out.height = FRAME_H;
     const g2 = out.getContext('2d'); g2.imageSmoothingQuality = 'high';
     g2.drawImage(c.src, c.x0, c.y0, c.w, c.h, (FRAME_W - w)/2, (FRAME_H - h)/2, w, h);
-    return { code: c.code, url: out.toDataURL('image/png'), w: Math.round(w), h: Math.round(h) };
+    // 減色は Node 側でやるので、画素をそのまま（RGBA・base64）で返す
+    const d = g2.getImageData(0, 0, FRAME_W, FRAME_H).data;
+    let s = ''; for (let i = 0; i < d.length; i += 0x8000) s += String.fromCharCode.apply(null, d.subarray(i, i + 0x8000));
+    return { code: c.code, rgba: btoa(s), w: Math.round(w), h: Math.round(h) };
   });
 }, { items: ITEMS, RENDER_W, RENDER_H, FRAME_W, FRAME_H, MARGIN });
 
+/* ── 減色：メディアンカットで色を決め、フロイド–スタインバーグの誤差拡散で割り当てる ──
+   完全に透明な画素は 0 番（透明）に固定し、誤差も流さない。縁の半透明はアルファも含めて
+   近い色へ寄せる。 */
+function quantize(rgba, n){
+  const px = [];
+  for (let i = 0; i < rgba.length; i += 4) if (rgba[i+3] >= 8) px.push([rgba[i], rgba[i+1], rgba[i+2], rgba[i+3]]);
+  let boxes = [px];
+  while (boxes.length < n - 1){
+    let bi = -1, bc = 0, br = -1;                    // いちばん幅の広い箱と、その軸
+    boxes.forEach((b, i) => { if (b.length < 2) return;
+      for (let c = 0; c < 4; c++){ let lo = 255, hi = 0; for (const p of b){ if (p[c] < lo) lo = p[c]; if (p[c] > hi) hi = p[c]; }
+        if (hi - lo > br){ br = hi - lo; bi = i; bc = c; } } });
+    if (bi < 0) break;
+    const b = boxes[bi].sort((p, q) => p[bc] - q[bc]), mid = b.length >> 1;
+    boxes.splice(bi, 1, b.slice(0, mid), b.slice(mid));
+  }
+  const palette = [[0, 0, 0, 0], ...boxes.map(b => {
+    const s = [0, 0, 0, 0]; for (const p of b) for (let c = 0; c < 4; c++) s[c] += p[c];
+    return s.map(v => Math.round(v / b.length));
+  })];
+  const W = FRAME_W, H = FRAME_H, index = new Uint8Array(W * H);
+  const err = new Float32Array(W * H * 4);        // 拡散した誤差（RGBA）
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++){
+    const i = y * W + x, o = i * 4;
+    if (rgba[o+3] < 8){ index[i] = 0; continue; }
+    const v = [0, 1, 2, 3].map(c => Math.max(0, Math.min(255, rgba[o+c] + err[o+c])));
+    let best = 1, bd = Infinity;
+    for (let k = 1; k < palette.length; k++){
+      const p = palette[k], d = (v[0]-p[0])**2 + (v[1]-p[1])**2 + (v[2]-p[2])**2 + 2*(v[3]-p[3])**2;
+      if (d < bd){ bd = d; best = k; }
+    }
+    index[i] = best;
+    const p = palette[best];
+    for (let c = 0; c < 4; c++){
+      const e = v[c] - p[c];
+      if (x + 1 < W) err[o + 4 + c] += e * 7/16;
+      if (y + 1 < H){ if (x > 0) err[o + 4*(W-1) + c] += e * 3/16; err[o + 4*W + c] += e * 5/16; if (x + 1 < W) err[o + 4*(W+1) + c] += e * 1/16; }
+    }
+  }
+  return { palette, index };
+}
+
+/* パレット PNG（8bit、PLTE と tRNS）を書く。フィルタは無し。 */
+function pngIndexed(w, h, index, palette){
+  const CRC = new Int32Array(256).map((_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; return c; });
+  const crc = buf => { let c = -1; for (const b of buf) c = CRC[(c ^ b) & 255] ^ (c >>> 8); return (c ^ -1) >>> 0; };
+  const chunk = (type, data) => { const t = Buffer.from(type), len = Buffer.alloc(4), cc = Buffer.alloc(4);
+    len.writeUInt32BE(data.length); cc.writeUInt32BE(crc(Buffer.concat([t, data]))); return Buffer.concat([len, t, data, cc]); };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 3;
+  const raw = Buffer.alloc((w + 1) * h);
+  for (let y = 0; y < h; y++){ raw[y * (w + 1)] = 0; raw.set(index.subarray(y * w, (y + 1) * w), y * (w + 1) + 1); }
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk('IHDR', ihdr),
+    chunk('PLTE', Buffer.from(palette.flatMap(p => [p[0], p[1], p[2]]))),
+    chunk('tRNS', Buffer.from(palette.map(p => p[3]))),
+    chunk('IDAT', zlib.deflateSync(raw, { level: 9 })),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
 mkdirSync(OUT, { recursive:true });
 for (const s of shots){
-  const buf = Buffer.from(s.url.split(',')[1], 'base64');
+  const { palette, index } = quantize(Buffer.from(s.rgba, 'base64'), COLORS);
+  const buf = pngIndexed(FRAME_W, FRAME_H, index, palette);
   writeFileSync(path.join(OUT, `${s.code}.png`), buf);
-  console.log(`${s.code}.png  ${FRAME_W}x${FRAME_H}  兵の占める大きさ ${s.w}x${s.h}  ${buf.length} bytes`);
+  console.log(`${s.code}.png  ${FRAME_W}x${FRAME_H}  兵の占める大きさ ${s.w}x${s.h}  ${palette.length}色  ${buf.length} bytes`);
 }
 await browser.close(); srv.close();
