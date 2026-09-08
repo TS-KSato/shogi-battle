@@ -244,7 +244,7 @@ function logLine(p, mv){
   const other = side === '自軍' ? '敵軍' : '自軍';
   let s;
   if (p.board[to] !== EMPTY){
-    s = `${side}の${logName(t)}が${dest}の${other}の${logName(typeOf(p.board[to]))}を討つ`;
+    s = `${side}の${logName(t)}が${dest}の${other}の${logName(typeOf(p.board[to]))}を降す`;
   } else {
     const ahead = (row(to) - row(from)) * (p.turn === BLACK ? -1 : 1);   // 指した側から見た前進量
     const verb = t === KE ? '跳ぶ' : ahead > 0 ? '進む' : ahead < 0 ? '下がる' : '移る';
