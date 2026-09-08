@@ -10,9 +10,15 @@
   html,body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);
     font:13px/1.7 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
     -webkit-text-size-adjust:100%}
-  body{padding:calc(20px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right))
-              calc(28px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left))}
+  #frame{padding:calc(20px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right))
+                calc(28px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left))}
   main{max-width:440px;margin:0 auto}
+  /* パソコンなど横長の画面では、スマートフォン（390:844）と同じ縦横比の枠を中央に置き、
+     その中で縦に読む。対局画面の iframe の中は縦長なので枠は出ない。 */
+  @media (min-aspect-ratio: 1/1){
+    #frame{position:fixed;top:5vh;left:50%;height:90vh;width:calc(90vh * 390 / 844);
+      transform:translateX(-50%);overflow-y:auto;box-shadow:0 0 0 1px var(--line)}
+  }
   header{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:14px}
   h1{font-size:16px;font-weight:500;letter-spacing:.12em;margin:0}
   .toTitle{color:var(--dim);font-size:11px;text-decoration:none;padding:8px 0}
@@ -63,6 +69,7 @@
 </style>
 </head>
 <body>
+<div id="frame">
 <main>
   <header><h1>ガイド</h1><a class="toTitle" href="./index.html">タイトルへ</a></header>
 
@@ -210,6 +217,13 @@
 
     <h3 id="komatta-mamoru">選びたい兵が選べない</h3>
     <p class="lead">「大将が危ない」のときは、大将を守れる兵しか選べない（<a href="#rule-abunai">ルールの「大将が危ない」へ</a>）。</p>
+
+    <h3 id="komatta-pc">パソコンで開いた</h3>
+    <p class="lead">パソコンでも遊べますが、スマートフォンの縦持ちに合わせて作っています。スマートフォンでの利用を勧めます。</p>
+    <ul>
+      <li>横長の画面では、中央にスマートフォンと同じ形の枠を置いて表示する</li>
+      <li>拡大はマウスのホイールでもできる（最大3倍）</li>
+    </ul>
   </section>
 
   <footer>
@@ -222,6 +236,7 @@
     <a class="toTitle" href="./index.html">タイトルへ</a>
   </footer>
 </main>
+</div>
 
 <script type="module">
 import { GAME_NAME } from './src/name.js';
@@ -247,6 +262,7 @@ function openFromHash(){
 for (const b of buttons) b.addEventListener('click', () => {
   location.hash = b.dataset.sec;            // 履歴に残るので、戻るで前の区分に戻れる
   scrollTo(0, 0);                           // 下の入口から開いたときも区分の頭から読める
+  document.getElementById('frame').scrollTop = 0;   // 横長の画面では枠のほうがスクロールする
 });
 addEventListener('hashchange', openFromHash);
 openFromHash();

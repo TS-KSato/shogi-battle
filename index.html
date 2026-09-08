@@ -12,17 +12,23 @@
     -webkit-text-size-adjust:100%}
   /* 戦場の絵を画面いっぱいに敷く。絵が無ければ背景色が残るだけ。
      viewport-fit=cover なので、四辺は safe-area のぶん逃がす。 */
-  body{background:var(--bg) url("./assets/title.jpg") center/cover no-repeat;
+  #frame{background:var(--bg) url("./assets/title.jpg") center/cover no-repeat;
     display:flex;flex-direction:column;align-items:center;justify-content:center;
     min-height:100vh;
     padding:calc(28px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right))
             calc(20px + env(safe-area-inset-bottom)) calc(20px + env(safe-area-inset-left))}
   #head,main{position:relative;width:100%;max-width:320px}
   /* 絵が読めたときだけ、ロゴを空の上部へ、操作は下部へ離す。読めなければ中央にまとめる。 */
-  html.art body{justify-content:space-between}
-  html.art body::before{content:"";position:fixed;inset:0;pointer-events:none;
+  html.art #frame{justify-content:space-between}
+  html.art #frame::before{content:"";position:fixed;inset:0;pointer-events:none;
     background:linear-gradient(to bottom,transparent 30%,rgba(12,13,11,.50) 50%,
       rgba(12,13,11,.88) 72%,rgba(12,13,11,.95) 100%)}
+  /* パソコンなど横長の画面では、スマートフォン（390:844）と同じ縦横比の枠を中央に置き、
+     その中に収める。transform を持つ要素は fixed の子孫の基準になるので、暗くする層も枠の中。 */
+  @media (min-aspect-ratio: 1/1){
+    #frame{position:fixed;top:5vh;left:50%;height:90vh;min-height:0;width:calc(90vh * 390 / 844);
+      transform:translateX(-50%);overflow:hidden;box-shadow:0 0 0 1px var(--line)}
+  }
   h1{font-size:20px;font-weight:500;letter-spacing:.14em;margin:0 0 4px;text-align:center;
     text-shadow:0 2px 6px rgba(0,0,0,.75)}
   /* 空の明るいところに載るので、輪郭ぶんの影を落とす（上部は暗くしない） */
@@ -57,6 +63,7 @@
 </style>
 </head>
 <body>
+<div id="frame">
 <header id="head">
   <h1 id="title"><span id="titleText"></span><img id="logo" src="./assets/logo.png" alt=""></h1>
   <p class="lead">兵を率いて、敵の大将を追い詰めろ。</p>
@@ -88,6 +95,7 @@
     <a href="./guide.html#komatta">困ったとき</a>
   </div>
 </main>
+</div>
 
 <script type="module">
 import { GAME_NAME } from './src/name.js';
