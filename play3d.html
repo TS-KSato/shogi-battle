@@ -532,13 +532,16 @@ function makePool(gltf, size){
   }
   return pool;
 }
-/* 骨付き gltf から持ち駒アイコンを1枚作る（自軍＝青。盤上と同じ奥向きで撮る）。 */
+/* 骨付き gltf から持ち駒アイコンを1枚作る（自軍＝青。盤上と同じ奥向きで撮る）。
+   素の姿勢は T 字なので、待機アニメの 0 秒目を骨に当ててから撮る。 */
 function iconFromGltf(gltf){
   const clone = THREE.SkeletonUtils.clone(gltf.scene);
   clone.traverse(o => { if (o.isSkinnedMesh){ o.material = lambertFrom(o.material, true); o.frustumCulled = false; } });
+  const mixer = new THREE.AnimationMixer(clone);
+  mixer.clipAction(gltf.animations[0]).play(); mixer.update(0);
   return `url("${makeSoldierIconFromObject(clone)}")`;
 }
-/* 骨付きモデルからも持ち駒アイコンを作る。1 体を安置ポーズのまま正面から撮る。 */
+/* 骨付きモデルからも持ち駒アイコンを作る。1 体を渡された姿勢のまま正面から撮る。 */
 function makeSoldierIconFromObject(obj){
   const W = 128, H = 160, r = getIconRenderer();
   const sc = new THREE.Scene();

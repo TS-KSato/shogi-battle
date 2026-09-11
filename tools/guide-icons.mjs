@@ -4,7 +4,7 @@
  *   node tools/guide-icons.mjs
  *
  * play3d.html と同じ three.js（CDN の同じ版）・同じ GLB・同じ照明で、俯角35度から
- * 1体ずつ撮る。姿勢は待機アニメの途中。自軍（青）を対局画面と同じ奥向きで。背景は透明。
+ * 1体ずつ撮る。姿勢は待機アニメの 0 秒目（控え欄のアイコンと同じ）。自軍（青）を対局画面と同じ奥向きで。背景は透明。
  * 近衛兵には幟、進化した鉄砲兵には大砲を、対局画面と同じ位置に添える。
  *
  * 枠は全枚 240×280 で共通。カメラの距離と拡大率も全枚で共通にするので、兵の背丈が
@@ -101,7 +101,7 @@ const shots = await page.evaluate(async ({ items, RENDER_W, RENDER_H, FRAME_W, F
     sc.add(obj);
     // 素の姿勢は T ポーズなので、対局画面と同じ待機アニメの姿勢にしてから撮る
     const mixer = new THREE.AnimationMixer(obj);
-    mixer.clipAction(g.animations[0]).play(); mixer.update(0.4);
+    mixer.clipAction(g.animations[0]).play(); mixer.update(0);   // 控え欄のアイコンと同じ 0 秒目
     if (it.extra){
       const e = await load(`./assets/${it.extra.file}`);
       e.scene.traverse(o => { if (o.isMesh){ o.material = lambert(o.material); o.material.skinning = false;
