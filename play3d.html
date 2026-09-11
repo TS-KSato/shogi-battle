@@ -584,12 +584,6 @@ try {
   const resolve = async (name, team) => {
     if (name === 'fu') return fuG[team];
     const side = team === 0 ? 'blue' : 'red', from = PROMOTED_OF[name];
-    /* 一時的な仕掛け：?gyoku=C|G|H|A|Gq で自軍の大将だけ候補 assets/gyoku_blue_<指定>.glb を読む。
-       見比べが済んだら、この塊と候補のファイルごと消す。それ以外の指定と、読めないときは通常どおり。 */
-    if (name === 'gyoku' && team === 0){
-      const t = new URLSearchParams(location.search).get('gyoku');
-      if (['C', 'G', 'H', 'A', 'Gq'].includes(t)){ try { return await loadGLTF(`./assets/gyoku_blue_${t}.glb`); } catch {} }
-    }
     // 成った姿は別ファイル。無ければ元の駒で代用し、それも無ければ歩まで落ちる。
     const url = from ? `./assets/${from}_${side}_promoted.glb`
                      : `./assets/${name}_${side}_idle.glb`;
