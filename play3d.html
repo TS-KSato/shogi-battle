@@ -547,14 +547,20 @@ function makeSoldierIconFromObject(obj){
   const back = new THREE.DirectionalLight(0x8fa9d8, 0.4);  back.position.set(-4, 2, -3); sc.add(back);
   obj.rotation.y = Math.PI;                         // 盤上の自軍と同じ向き（奥を向く）
   // 骨付きは skin 変換で立つので、ノード変換込みの setFromObject では箱が潰れる（Armature が微小scale）。
-  // 描画される大きさはジオメトリ本来のバウンディング（全高約0.70・足元原点）に一致するのでそれで構図を取る。
-  // 複数プリミティブのモデルは全プリミティブを合わせないと構図から外れる部位が出る。
+  // 描画される大きさはジオメトリのバウンディングにメッシュのノード変換だけを掛けたもの（全高約0.70・
+  // 足元原点）に一致するのでそれで構図を取る。gltfpack で量子化したモデルは頂点が整数で入り、
+  // このノード変換で実寸に戻るので、掛けないと箱が数千倍になる。
+  // 複数プリミティブのモデルは GLTFLoader がノードを Group にして下にメッシュを並べるので、
+  // ノード変換は親の Group にある。全プリミティブを合わせないと構図から外れる部位が出る。
   let box = null;
   obj.traverse(o => {
     if (!o.isSkinnedMesh) return;
     o.frustumCulled = false;
-    o.geometry.computeBoundingBox();
-    box = box ? box.union(o.geometry.boundingBox) : o.geometry.boundingBox.clone();
+    o.geometry.computeBoundingBox(); o.updateMatrix();
+    const m = o.matrix.clone();
+    if (o.parent && o.parent.isGroup){ o.parent.updateMatrix(); m.premultiply(o.parent.matrix); }
+    const b = o.geometry.boundingBox.clone().applyMatrix4(m);
+    box = box ? box.union(b) : b;
   });
   sc.add(obj);
   if (!box) box = new THREE.Box3().setFromObject(obj);

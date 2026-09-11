@@ -90,8 +90,13 @@ const shots = await page.evaluate(async ({ items, RENDER_W, RENDER_H, FRAME_W, F
     const g = await load(`./assets/${it.file}`);
     const obj = THREE.SkeletonUtils.clone(g.scene);
     const box = new THREE.Box3();
+    // 外接箱はジオメトリにメッシュのノード変換を掛けたもの。量子化したモデルは頂点が整数で入り、
+    // ノードの scale で実寸に戻るので、掛けないと箱が数千倍になる。複数プリミティブのモデルは
+    // GLTFLoader がノードを Group にするので、その変換は親にある（play3d.html の控え欄アイコンと同じ）
     obj.traverse(o => { if (o.isSkinnedMesh){ o.material = lambert(o.material); o.frustumCulled = false;
-      o.geometry.computeBoundingBox(); box.union(o.geometry.boundingBox); } });
+      o.geometry.computeBoundingBox(); o.updateMatrix();
+      const m = o.matrix.clone(); if (o.parent && o.parent.isGroup){ o.parent.updateMatrix(); m.premultiply(o.parent.matrix); }
+      box.union(o.geometry.boundingBox.clone().applyMatrix4(m)); } });
     obj.rotation.y = it.side === 'blue' ? Math.PI : 0;               // 対局画面と同じ向き（自軍は奥向き）
     sc.add(obj);
     // 素の姿勢は T ポーズなので、対局画面と同じ待機アニメの姿勢にしてから撮る
